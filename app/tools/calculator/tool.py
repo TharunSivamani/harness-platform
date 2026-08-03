@@ -1,14 +1,12 @@
 import time
 
+from app.schemas.tool_manifest import ToolManifest
 from app.schemas.tool_result import ToolResult
 from app.tools.base import BaseTool
-from app.schemas.tool_manifest import ToolManifest
 
 manifest = ToolManifest(
     name="calculator",
-
     description="Performs mathematical calculations.",
-
     keywords=[
         "calculate",
         "math",
@@ -21,12 +19,11 @@ manifest = ToolManifest(
     ],
 )
 
-class CalculatorTool(BaseTool):
 
+class CalculatorTool(BaseTool):
     manifest = manifest
 
     async def execute(self, expression: str) -> ToolResult:
-
         start = time.perf_counter()
 
         try:
@@ -39,7 +36,6 @@ class CalculatorTool(BaseTool):
             )
 
         except Exception as e:
-
             return ToolResult(
                 success=False,
                 error=str(e),

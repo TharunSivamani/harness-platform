@@ -216,3 +216,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# ForgeAI workspace runtime files
+workspace/*
+!workspace/.gitkeep

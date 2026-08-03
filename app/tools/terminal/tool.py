@@ -1,0 +1,101 @@
+import asyncio
+import shlex
+import time
+
+from app.core.config import settings
+from app.schemas.tool_manifest import ToolManifest
+from app.schemas.tool_result import ToolResult
+from app.tools.base import BaseTool
+from app.tools.filesystem.paths import get_workspace_root
+
+manifest = ToolManifest(
+    name="terminal",
+    description="Run allowlisted shell commands inside the workspace.",
+    keywords=[
+        "terminal",
+        "shell",
+        "command",
+        "bash",
+        "cmd",
+        "run",
+        "execute",
+    ],
+)
+
+
+class TerminalTool(BaseTool):
+    manifest = manifest
+
+    async def execute(self, command: str) -> ToolResult:
+        start = time.perf_counter()
+
+        try:
+            command = command.strip()
+            if not command:
+                raise ValueError("Command must not be empty.")
+
+            try:
+                parts = shlex.split(command, posix=False)
+            except ValueError as exc:
+                raise ValueError(f"Invalid command: {exc}") from exc
+
+            if not parts:
+                raise ValueError("Command must not be empty.")
+
+            executable = parts[0].lower()
+            # Strip path prefixes like .\python or /usr/bin/ls
+            executable_name = executable.replace("\\", "/").split("/")[-1]
+            if executable_name.endswith(".exe"):
+                executable_name = executable_name[:-4]
+
+            if executable_name not in settings.terminal_allowlist:
+                raise PermissionError(
+                    f"Command '{executable_name}' is not allowlisted."
+                )
+
+            # Use a shell so Windows builtins (echo, dir, etc.) resolve.
+            process = await asyncio.create_subprocess_shell(
+                command,
+                cwd=str(get_workspace_root()),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+
+            try:
+                stdout, stderr = await asyncio.wait_for(
+                    process.communicate(),
+                    timeout=settings.TERMINAL_TIMEOUT_SECONDS,
+                )
+            except TimeoutError:
+                process.kill()
+                await process.communicate()
+                raise TimeoutError(
+                    f"Command timed out after "
+                    f"{settings.TERMINAL_TIMEOUT_SECONDS} seconds."
+                )
+
+            output = stdout.decode(errors="replace").strip()
+            error_output = stderr.decode(errors="replace").strip()
+
+            if process.returncode != 0:
+                return ToolResult(
+                    success=False,
+                    output=output or None,
+                    error=error_output or f"Exit code {process.returncode}",
+                    execution_time=time.perf_counter() - start,
+                    metadata={"returncode": process.returncode, "command": command},
+                )
+
+            return ToolResult(
+                success=True,
+                output=output,
+                execution_time=time.perf_counter() - start,
+                metadata={"returncode": process.returncode, "command": command},
+            )
+
+        except Exception as e:
+            return ToolResult(
+                success=False,
+                error=str(e),
+                execution_time=time.perf_counter() - start,
+            )
