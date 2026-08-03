@@ -1,0 +1,58 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #0f1419;
+  --foreground: #e8eef5;
+  --ember: #d97745;
+  --steel-950: #0b1016;
+  --steel-900: #121821;
+  --steel-800: #1a2330;
+  --steel-700: #2a3648;
+  --steel-300: #9aa8bc;
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  color: var(--foreground);
+  background:
+    radial-gradient(1200px 600px at 10% -10%, rgba(217, 119, 69, 0.18), transparent 55%),
+    radial-gradient(900px 500px at 90% 0%, rgba(74, 122, 158, 0.16), transparent 50%),
+    linear-gradient(160deg, #101820 0%, #0b1016 45%, #131b24 100%);
+  font-family: var(--font-body), system-ui, sans-serif;
+}
+
+.bg-forge-glow {
+  background:
+    radial-gradient(circle at 20% 20%, rgba(217, 119, 69, 0.12), transparent 35%),
+    radial-gradient(circle at 80% 10%, rgba(90, 140, 170, 0.1), transparent 40%);
+}
+
+.bg-forge-grid {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: linear-gradient(to bottom, black, transparent 90%);
+}
+
+.panel {
+  @apply rounded-xl border border-steel-700/70 bg-steel-900/75 shadow-[0_20px_60px_rgba(0,0,0,0.35)] backdrop-blur-sm;
+}
+
+.input-forge {
+  @apply w-full rounded-lg border border-steel-700 bg-steel-950/80 px-3 py-2 text-sm text-steel-50 outline-none ring-ember-400/40 placeholder:text-steel-500 focus:ring-2;
+}
+
+.btn-forge {
+  @apply inline-flex items-center justify-center rounded-lg bg-ember-500 px-4 py-2 text-sm font-medium text-steel-950 transition hover:bg-ember-400 disabled:cursor-not-allowed disabled:opacity-50;
+}
+
+.btn-ghost {
+  @apply inline-flex items-center justify-center rounded-lg border border-steel-700 bg-steel-950/50 px-3 py-2 text-sm text-steel-200 transition hover:border-steel-500 hover:bg-steel-800;
+}

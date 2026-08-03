@@ -28,13 +28,14 @@ playwright install chromium
 # run API
 uvicorn app.main:app --reload
 
-# smoke tests
-python test_runtime.py
-python test_kernel.py
-python test_planner.py
+# run UI (separate terminal)
+cd frontend
+npm install
+npm run dev
 ```
 
-Open docs at `http://127.0.0.1:8000/docs`.
+- API docs: `http://127.0.0.1:8000/docs`
+- Console UI: `http://localhost:3000`
 
 ### Docker
 

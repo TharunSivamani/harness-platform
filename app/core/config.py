@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite:///./forgeai.db"
     MAX_WORKSPACE_BYTES: int = 100 * 1024 * 1024
     TASK_WORKERS: int = 2
+    CORS_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000"
 
     class Config:
         env_file = ".env"
@@ -55,6 +56,14 @@ class Settings(BaseSettings):
         return [
             item.strip().lower()
             for item in self.LLM_FALLBACK_PROVIDERS.split(",")
+            if item.strip()
+        ]
+
+    @property
+    def cors_origins(self) -> list[str]:
+        return [
+            item.strip()
+            for item in self.CORS_ORIGINS.split(",")
             if item.strip()
         ]
 
