@@ -15,6 +15,15 @@ class Settings(BaseSettings):
     TERMINAL_TIMEOUT_SECONDS: int = 10
     TERMINAL_ALLOWLIST: str = "dir,ls,echo,type,cat,pwd,cd,whoami,python,python3,pip"
 
+    BROWSER_TIMEOUT_SECONDS: int = 30
+    BROWSER_MAX_TEXT_CHARS: int = 8000
+
+    LLM_PROVIDER: str = "openai"
+    PLANNER_MODE: str = "auto"
+    ANTHROPIC_API_KEY: str | None = None
+    OLLAMA_BASE_URL: str = "http://localhost:11434"
+    VLLM_BASE_URL: str = "http://localhost:8001/v1"
+
     class Config:
         env_file = ".env"
 

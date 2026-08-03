@@ -1,9 +1,13 @@
+import json
 import re
 
 from app.agents.base import BaseAgent
+from app.core.config import settings
+from app.core.logger import logger
 from app.kernel.kernel import ExecutionKernel
+from app.llm.factory import get_llm
 from app.schemas.tool_result import ToolResult
-from app.tools.loader import load_plugins
+from app.tools.loader import load_plugins, registry
 from app.tools.selector import ToolSelector
 
 
@@ -13,7 +17,7 @@ class PlannerAgent(BaseAgent):
 
     Responsibilities:
     1. Receive user input.
-    2. Select the best tool.
+    2. Select the best tool (LLM or keyword fallback).
     3. Execute the tool through the kernel.
     4. Return the ToolResult.
     """
@@ -24,23 +28,97 @@ class PlannerAgent(BaseAgent):
         self.selector = ToolSelector()
 
     async def run(self, user_input: str) -> ToolResult:
-        tool = self.selector.select(user_input)
+        plan = None
 
-        if tool is None:
-            return ToolResult(
-                success=False,
-                error="No suitable tool found.",
-            )
+        if self._should_use_llm():
+            try:
+                plan = await self._plan_with_llm(user_input)
+            except Exception as exc:
+                logger.warning("LLM planning failed, falling back to keywords: %s", exc)
 
-        arguments = self._build_arguments(
-            tool.manifest.name,
-            user_input,
-        )
+        if plan is None:
+            tool = self.selector.select(user_input)
+            if tool is None:
+                return ToolResult(
+                    success=False,
+                    error="No suitable tool found.",
+                )
+            plan = {
+                "tool": tool.manifest.name,
+                "arguments": self._build_arguments(tool.manifest.name, user_input),
+            }
 
         return await self.kernel.execute(
-            tool_name=tool.manifest.name,
-            **arguments,
+            tool_name=plan["tool"],
+            **plan.get("arguments", {}),
         )
+
+    def _should_use_llm(self) -> bool:
+        mode = settings.PLANNER_MODE.lower().strip()
+        if mode == "keyword":
+            return False
+        if mode == "llm":
+            return True
+
+        provider = settings.LLM_PROVIDER.lower().strip()
+        if provider == "openai":
+            return bool(settings.OPENAI_API_KEY)
+        if provider == "anthropic":
+            return bool(settings.ANTHROPIC_API_KEY)
+        if provider in {"ollama", "vllm"}:
+            return True
+        return False
+
+    async def _plan_with_llm(self, user_input: str) -> dict:
+        manifests = registry.discover()
+        tool_lines = []
+        for manifest in manifests:
+            tool_lines.append(
+                f"- {manifest.name}: {manifest.description} "
+                f"(keywords: {', '.join(manifest.keywords)})"
+            )
+
+        system = (
+            "You are the ForgeAI planner. Choose exactly one tool and arguments. "
+            "Respond with JSON only in this shape: "
+            '{"tool": "<name>", "arguments": {}}. '
+            "Do not include markdown."
+        )
+        prompt = (
+            "Available tools:\n"
+            + "\n".join(tool_lines)
+            + "\n\nUser request:\n"
+            + user_input
+        )
+
+        llm = get_llm()
+        raw = await llm.complete(prompt=prompt, system=system)
+        data = self._parse_llm_json(raw)
+
+        tool_name = data.get("tool")
+        arguments = data.get("arguments") or {}
+
+        if not tool_name or tool_name not in registry.list_tools():
+            raise ValueError(f"LLM selected unknown tool: {tool_name}")
+
+        if not isinstance(arguments, dict):
+            raise ValueError("LLM arguments must be an object.")
+
+        return {"tool": tool_name, "arguments": arguments}
+
+    def _parse_llm_json(self, raw: str) -> dict:
+        text = raw.strip()
+        fenced = re.search(r"```(?:json)?\s*(.*?)```", text, re.DOTALL)
+        if fenced:
+            text = fenced.group(1).strip()
+
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            match = re.search(r"\{.*\}", text, re.DOTALL)
+            if not match:
+                raise
+            return json.loads(match.group(0))
 
     def _build_arguments(
         self,
@@ -58,6 +136,12 @@ class PlannerAgent(BaseAgent):
 
         if tool_name == "filesystem":
             return self._build_filesystem_arguments(user_input)
+
+        if tool_name == "search":
+            return {"query": self._extract_search_query(user_input)}
+
+        if tool_name == "browser":
+            return self._build_browser_arguments(user_input)
 
         return {}
 
@@ -135,3 +219,42 @@ class PlannerAgent(BaseAgent):
             return {"action": "list", "path": path}
 
         return {"action": "list", "path": "."}
+
+    def _extract_search_query(self, user_input: str) -> str:
+        text = user_input.strip()
+        lowered = text.lower()
+        for prefix in (
+            "search for",
+            "search",
+            "lookup",
+            "find",
+            "google",
+            "web search",
+        ):
+            if lowered.startswith(prefix):
+                return text[len(prefix):].strip(" :")
+        return text
+
+    def _build_browser_arguments(self, user_input: str) -> dict:
+        text = user_input.strip()
+        lowered = text.lower()
+
+        url_match = re.search(r"https?://\S+", text)
+        url = url_match.group(0).rstrip(".,)") if url_match else None
+
+        if "screenshot" in lowered:
+            path_match = re.search(
+                r"screenshot(?:\s+to)?\s+(?P<path>\S+\.png)",
+                text,
+                re.I,
+            )
+            return {
+                "action": "screenshot",
+                "url": url,
+                "path": path_match.group("path") if path_match else "screenshot.png",
+            }
+
+        if "content" in lowered or "extract" in lowered or "text" in lowered:
+            return {"action": "content", "url": url}
+
+        return {"action": "navigate", "url": url}
