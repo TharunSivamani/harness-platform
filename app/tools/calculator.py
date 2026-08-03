@@ -2,13 +2,28 @@ import time
 
 from app.schemas.tool_result import ToolResult
 from app.tools.base import BaseTool
+from app.schemas.tool_manifest import ToolManifest
 
+manifest = ToolManifest(
+    name="calculator",
+
+    description="Performs mathematical calculations.",
+
+    keywords=[
+        "calculate",
+        "math",
+        "multiply",
+        "divide",
+        "add",
+        "subtract",
+        "equation",
+        "expression",
+    ],
+)
 
 class CalculatorTool(BaseTool):
 
-    name = "calculator"
-
-    description = "Evaluate mathematical expressions."
+    manifest = manifest
 
     async def execute(self, expression: str) -> ToolResult:
 
