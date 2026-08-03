@@ -7,6 +7,8 @@ Next.js UI for the ForgeAI agent operating system.
 - `/` — Chat (creates session, calls `POST /chat`)
 - `/tools` — Tool inspector + direct `POST /tool`
 - `/sessions` — List/create sessions and inspect history
+- `/artifacts` — Upload + download artifacts
+- `/ops` — Metrics, event bus, execution recorder
 
 ## Run with backend
 

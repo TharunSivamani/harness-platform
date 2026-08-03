@@ -7,6 +7,8 @@ const links = [
   { href: "/", label: "Chat" },
   { href: "/tools", label: "Tools" },
   { href: "/sessions", label: "Sessions" },
+  { href: "/artifacts", label: "Artifacts" },
+  { href: "/ops", label: "Ops" },
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {

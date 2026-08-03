@@ -86,6 +86,30 @@ export const api = {
         timestamp: string;
       }>;
     }>("/events?limit=30"),
+  artifacts: () =>
+    request<{
+      artifacts: Array<{
+        artifact_id: string;
+        name: string;
+        media_type: string;
+        size: number;
+        version: number;
+        created_at: string;
+        metadata: Record<string, unknown>;
+      }>;
+    }>("/artifacts"),
+  executions: () =>
+    request<{
+      executions: Array<{
+        record_id: string;
+        tool: string;
+        success: boolean;
+        duration: number;
+        error: string | null;
+        created_at: string;
+      }>;
+    }>("/executions?limit=30"),
+  artifactUrl: (id: string) => `${API_URL}/artifacts/${id}`,
 };
 
 export { API_URL };
