@@ -220,6 +220,6 @@ __marimo__/
 workspace/*
 !workspace/.gitkeep
 !workspace/README.md
-artifacts/
+/artifacts/
 forgeai.db
 *.db
