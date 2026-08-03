@@ -12,12 +12,23 @@ class OpenAIProvider(BaseLLM):
         base_url: str | None = None,
     ):
         self.model = model or settings.MODEL_NAME
-        self.client = AsyncOpenAI(
-            api_key=api_key or settings.OPENAI_API_KEY,
-            base_url=base_url,
-        )
+        self.api_key = api_key if api_key is not None else settings.OPENAI_API_KEY
+        self.base_url = base_url
+        self._client: AsyncOpenAI | None = None
+
+    @property
+    def client(self) -> AsyncOpenAI:
+        if self._client is None:
+            self._client = AsyncOpenAI(
+                api_key=self.api_key or "MISSING_OPENAI_API_KEY",
+                base_url=self.base_url,
+            )
+        return self._client
 
     async def complete(self, prompt: str, system: str | None = None) -> str:
+        if not self.api_key and self.base_url is None:
+            raise ValueError("OPENAI_API_KEY is required for OpenAIProvider.")
+
         messages = []
         if system:
             messages.append({"role": "system", "content": system})
