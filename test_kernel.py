@@ -41,6 +41,13 @@ async def main():
     )
     print("terminal:", term.model_dump_json(indent=2))
 
+    search = await kernel.execute(
+        "search",
+        query="Python asyncio",
+        max_results=3,
+    )
+    print("search:", search.model_dump_json(indent=2))
+
 
 if __name__ == "__main__":
     asyncio.run(main())
