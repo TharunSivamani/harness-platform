@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any
+from app.schemas.tool_result import ToolResult
 
 
 class BaseTool(ABC):
@@ -11,7 +11,7 @@ class BaseTool(ABC):
     description: str
 
     @abstractmethod
-    async def execute(self, **kwargs) -> Any:
+    async def execute(self, **kwargs) -> ToolResult:
         """
         Execute the tool.
         """

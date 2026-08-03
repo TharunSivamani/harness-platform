@@ -1,3 +1,6 @@
+import time
+
+from app.schemas.tool_result import ToolResult
 from app.tools.base import BaseTool
 
 
@@ -7,10 +10,23 @@ class CalculatorTool(BaseTool):
 
     description = "Evaluate mathematical expressions."
 
-    async def execute(self, expression: str):
+    async def execute(self, expression: str) -> ToolResult:
+
+        start = time.perf_counter()
 
         try:
-            return eval(expression)
+            result = eval(expression)
+
+            return ToolResult(
+                success=True,
+                output=result,
+                execution_time=time.perf_counter() - start,
+            )
 
         except Exception as e:
-            return str(e)
+
+            return ToolResult(
+                success=False,
+                error=str(e),
+                execution_time=time.perf_counter() - start,
+            )

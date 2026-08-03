@@ -8,10 +8,10 @@ async def main():
 
     result = await kernel.execute(
         "calculator",
-        expression="10 * (5 + 2)"
+        expression="5 * (12 + 8)"
     )
 
-    print(result)
+    print(result.model_dump_json(indent=2))
 
 
 asyncio.run(main())
