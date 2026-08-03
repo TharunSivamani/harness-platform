@@ -1,0 +1,13 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - WORKSPACE_ROOT=/app/workspace
+      - ARTIFACT_ROOT=/app/artifacts
+      - SANDBOX_BACKEND=local
+      - PLANNER_MODE=keyword
+    volumes:
+      - ./workspace:/app/workspace
+      - ./artifacts:/app/artifacts

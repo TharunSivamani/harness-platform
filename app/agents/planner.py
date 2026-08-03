@@ -5,7 +5,7 @@ from app.agents.base import BaseAgent
 from app.core.config import settings
 from app.core.logger import logger
 from app.kernel.kernel import ExecutionKernel
-from app.llm.factory import get_llm
+from app.llm.router import llm_router
 from app.schemas.tool_result import ToolResult
 from app.tools.loader import load_plugins, registry
 from app.tools.selector import ToolSelector
@@ -91,7 +91,7 @@ class PlannerAgent(BaseAgent):
             + user_input
         )
 
-        llm = get_llm()
+        llm = llm_router
         raw = await llm.complete(prompt=prompt, system=system)
         data = self._parse_llm_json(raw)
 

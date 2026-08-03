@@ -18,6 +18,7 @@ manifest = ToolManifest(
         "execute python",
         "run python",
     ],
+    permissions=["python.execute"],
 )
 
 _BINARY_OPS = {

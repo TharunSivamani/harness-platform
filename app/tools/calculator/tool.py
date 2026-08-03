@@ -17,6 +17,7 @@ manifest = ToolManifest(
         "equation",
         "expression",
     ],
+    permissions=["calculator.execute"],
 )
 
 

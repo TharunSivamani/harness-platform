@@ -19,6 +19,7 @@ manifest = ToolManifest(
         "folder",
         "path",
     ],
+    permissions=["filesystem.read", "filesystem.write"],
 )
 
 

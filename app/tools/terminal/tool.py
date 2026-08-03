@@ -20,6 +20,7 @@ manifest = ToolManifest(
         "run",
         "execute",
     ],
+    permissions=["terminal.execute"],
 )
 
 

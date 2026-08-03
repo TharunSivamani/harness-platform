@@ -20,6 +20,7 @@ manifest = ToolManifest(
         "url",
         "open",
     ],
+    permissions=["browser.navigate", "browser.screenshot"],
 )
 
 

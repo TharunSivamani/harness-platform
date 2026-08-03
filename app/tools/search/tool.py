@@ -19,6 +19,7 @@ manifest = ToolManifest(
         "query",
         "internet",
     ],
+    permissions=["search"],
 )
 
 
