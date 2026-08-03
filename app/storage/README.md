@@ -1,22 +1,21 @@
 # `app/storage/`
 
-Persistence layer for development (SQLite). Production can later swap to Postgres.
+Portable persistence under `FORGE_HOME`.
 
 ## Files
 
 | File | Purpose |
 |------|---------|
-| `db.py` | `Storage` — key/value store + audit log table |
+| `paths.py` | `ForgePaths` layout helpers (`users/`, sessions, uploads, workspace) |
+| `db.py` | SQLite users/sessions/messages/token_usage + jsonl mirrors |
 
-## Examples
+## Example
 
 ```python
 from app.storage.db import storage
 
-storage.set("last_user", {"id": "u1"})
-print(storage.get("last_user"))
-
-storage.audit("tool.execute", {"tool": "calculator", "ok": True})
+user = storage.ensure_default_user()
+session = storage.create_session(user["user_id"], title="Demo")
+storage.add_message(session_id=session["session_id"], user_id=user["user_id"], role="user", content="hi")
+print(storage.user_stats(user["user_id"]))
 ```
-
-Database file defaults to `./forgeai.db` via `DATABASE_URL=sqlite:///./forgeai.db`.

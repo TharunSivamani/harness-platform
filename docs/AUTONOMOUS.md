@@ -1,53 +1,24 @@
-# Autonomous Agent Harness
+# Chat loop (product autonomy)
 
-ForgeAI's Claude-Code-style control loop lives in `app/agents/runner.py`.
-
-## Loop
+ForgeAI autonomy is **inside chat**, not a separate `/agent/autonomous` product flow.
 
 ```text
-goal
-  → decide (LLM or heuristic)
-  → optional approval gate
-  → kernel.execute(tool)
-  → append tool result to transcript
-  → repeat until final / max_steps / failure
+user message
+  -> persist prompt
+  -> LLM with tool schemas
+  -> while tool_calls: execute -> persist tool result -> LLM again
+  -> persist final assistant message
 ```
 
-## APIs
+APIs:
 
-| Method | Path | Purpose |
-|--------|------|---------|
-| `POST` | `/agent/autonomous` | Start a run |
-| `GET` | `/agent/runs/{id}` | Snapshot |
-| `GET` | `/agent/runs/{id}/stream` | SSE live events |
-| `POST` | `/agent/runs/{id}/approve` | Resume after approval gate |
+- `POST /sessions/{id}/chat`
+- `GET /sessions/{id}/stream`
 
-### Start
+CLI:
 
 ```bash
-curl -X POST http://127.0.0.1:8000/agent/autonomous ^
-  -H "Content-Type: application/json" ^
-  -d "{\"goal\": \"calculate 2+2\", \"auto_approve\": true}"
+forge chat "list files and summarize"
 ```
 
-### Stream
-
-```bash
-curl -N http://127.0.0.1:8000/agent/runs/<run_id>/stream
-```
-
-Events include: `RunStarted`, `StepPlanned`, `ApprovalRequired`, `ToolStarted`, `ToolFinished`, `RunCompleted`, `RunFailed`.
-
-## UI
-
-Open [http://localhost:3000/run](http://localhost:3000/run) for the live run console.
-
-## Config
-
-```env
-AGENT_MAX_STEPS=8
-AGENT_AUTO_APPROVE=true
-AGENT_APPROVAL_TOOLS=terminal,filesystem,browser
-```
-
-When `AGENT_AUTO_APPROVE=false`, tools in `AGENT_APPROVAL_TOOLS` pause the run until `/approve`.
+Legacy autonomous runner may still exist for experiments, but the UI/CLI use the chat loop.

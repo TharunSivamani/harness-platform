@@ -1,10 +1,11 @@
 from pathlib import Path
 
 from app.core.config import settings
+from app.storage.paths import paths
 
 
 def get_workspace_root() -> Path:
-    root = Path(settings.WORKSPACE_ROOT).resolve()
+    root = paths.root / "workspace"
     root.mkdir(parents=True, exist_ok=True)
     return root
 

@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from app.core.config import settings
+from app.storage.paths import paths
 
 
 @dataclass
@@ -27,7 +27,7 @@ class WorkspaceManager:
     """
 
     def __init__(self, root: str | Path | None = None):
-        self.root = Path(root or settings.WORKSPACE_ROOT).resolve()
+        self.root = Path(root or (paths.root / "workspaces")).resolve()
         self.root.mkdir(parents=True, exist_ok=True)
         self._workspaces: dict[str, Workspace] = {}
 

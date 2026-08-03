@@ -153,9 +153,9 @@ class PythonTool(BaseTool):
 
             if use_sandbox:
                 from app.runtime.sandbox import sandbox_manager
-                from app.tools.filesystem.paths import get_workspace_root
+                from app.tools.workspace_paths import session_workspace
 
-                workdir = get_workspace_root()
+                workdir = session_workspace()
                 script_path = workdir / "_forge_script.py"
                 script_path.write_text(code, encoding="utf-8")
                 sandbox = await sandbox_manager.execute(

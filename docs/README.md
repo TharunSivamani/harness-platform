@@ -4,10 +4,10 @@ Architecture and developer notes for ForgeAI.
 
 ## Contents
 
-- Root [`README.md`](../README.md) — vision, quick start, API table
-- [`AUTONOMOUS.md`](AUTONOMOUS.md) — multi-step agent harness + SSE
-- [`SANDBOXES.md`](SANDBOXES.md) — local/Docker sandbox model
-- Folder READMEs under `app/**` — file responsibilities + examples
+- Root [`README.md`](../README.md)
+- [`DATA.md`](DATA.md) — portable FORGE_HOME
+- [`SANDBOXES.md`](SANDBOXES.md) — Hermes-style terminal/file tools
+- [`AUTONOMOUS.md`](AUTONOMOUS.md) — chat-loop autonomy
 
 ## Suggested next docs
 

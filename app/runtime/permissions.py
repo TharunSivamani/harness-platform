@@ -8,6 +8,20 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         "filesystem.read",
         "search",
         "browser.navigate",
+        "read_file",
+    },
+    "member": {
+        "filesystem.read",
+        "filesystem.write",
+        "python.execute",
+        "terminal.execute",
+        "search",
+        "browser.navigate",
+        "browser.screenshot",
+        "calculator.execute",
+        "read_file",
+        "write_file",
+        "patch",
     },
     "developer": {
         "filesystem.read",
@@ -18,7 +32,11 @@ ROLE_PERMISSIONS: dict[str, set[str]] = {
         "browser.navigate",
         "browser.screenshot",
         "calculator.execute",
+        "read_file",
+        "write_file",
+        "patch",
     },
+    "owner": {"*"},
     "admin": {"*"},
 }
 

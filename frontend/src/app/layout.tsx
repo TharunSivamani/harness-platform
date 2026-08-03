@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { IBM_Plex_Mono, IBM_Plex_Sans, Syne } from "next/font/google";
-import { AppShell } from "@/components/AppShell";
 import "./globals.css";
 
 const display = Syne({
@@ -22,8 +21,8 @@ const mono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "ForgeAI Console",
-  description: "Operator console for the ForgeAI agent operating system",
+  title: "ForgeAI",
+  description: "Portable ChatGPT-style agent workspace",
 };
 
 export default function RootLayout({
@@ -36,7 +35,7 @@ export default function RootLayout({
       <body
         className={`${display.variable} ${body.variable} ${mono.variable} font-body antialiased`}
       >
-        <AppShell>{children}</AppShell>
+        {children}
       </body>
     </html>
   );

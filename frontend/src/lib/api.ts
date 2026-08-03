@@ -2,131 +2,102 @@ const API_URL =
   process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ||
   "http://127.0.0.1:8000";
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function request<T>(
+  path: string,
+  init?: RequestInit,
+  userId?: string,
+): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",
+      ...(userId ? { "X-Forge-User": userId } : {}),
       ...(init?.headers || {}),
     },
     cache: "no-store",
   });
-
   if (!response.ok) {
-    const text = await response.text();
-    throw new Error(text || `Request failed (${response.status})`);
+    throw new Error((await response.text()) || `HTTP ${response.status}`);
   }
-
   return response.json() as Promise<T>;
 }
 
-export type ToolManifest = {
-  name: string;
-  description: string;
-  keywords: string[];
-  priority: number;
-  permissions: string[];
-};
-
-export type ChatResponse = {
-  task_id: string;
-  success: boolean;
-  output: unknown;
-  error: string | null;
-  execution_time?: number;
-  session_id?: string;
-};
-
-export type SessionDetail = {
-  session_id: string;
+export type Message = {
+  message_id: string;
+  role: string;
+  content: string;
+  metadata?: Record<string, unknown>;
   created_at: string;
-  summary: string | null;
-  messages: Array<{
-    role: string;
-    content: string;
-    timestamp: string;
-  }>;
+};
+
+export type Session = {
+  session_id: string;
+  user_id: string;
+  title: string;
+  model?: string;
+  updated_at?: string;
+  created_at?: string;
 };
 
 export const api = {
-  health: () => request<{ status: string; version?: string }>("/health"),
-  tools: () => request<{ tools: ToolManifest[] }>("/tools"),
-  sessions: () => request<{ sessions: string[] }>("/sessions"),
-  createSession: () =>
-    request<{ session_id: string; workspace_id: string; created_at: string }>(
-      "/session",
-      { method: "POST", body: JSON.stringify({ metadata: { source: "ui" } }) },
+  me: (userId?: string) =>
+    request<{ user_id: string; name: string; role: string; stats: Record<string, number> }>(
+      "/users/me",
+      undefined,
+      userId,
     ),
-  getSession: (id: string) => request<SessionDetail>(`/session/${id}`),
-  chat: (message: string, sessionId?: string | null) =>
-    request<ChatResponse>("/chat", {
-      method: "POST",
-      body: JSON.stringify({
-        message,
-        session_id: sessionId || null,
-      }),
-    }),
-  runTool: (tool: string, arguments_: Record<string, unknown>) =>
+  sessions: (userId?: string) =>
+    request<{ sessions: Session[] }>("/sessions", undefined, userId),
+  createSession: (title = "New chat", userId?: string) =>
+    request<Session>(
+      "/sessions",
+      { method: "POST", body: JSON.stringify({ title }) },
+      userId,
+    ),
+  messages: (sessionId: string, userId?: string) =>
+    request<{ messages: Message[] }>(
+      `/sessions/${sessionId}/messages`,
+      undefined,
+      userId,
+    ),
+  chat: (sessionId: string, content: string, userId?: string) =>
     request<{
-      success: boolean;
-      output: unknown;
-      error: string | null;
-      execution_time: number;
-    }>("/tool", {
-      method: "POST",
-      body: JSON.stringify({ tool, arguments: arguments_ }),
-    }),
-  metrics: () => request<Record<string, unknown>>("/metrics"),
-  events: () =>
+      content: string;
+      steps: number;
+      stats: Record<string, number>;
+      messages: Message[];
+    }>(
+      `/sessions/${sessionId}/chat`,
+      { method: "POST", body: JSON.stringify({ content }) },
+      userId,
+    ),
+  stats: (userId?: string) =>
+    request<Record<string, number>>("/stats/me", undefined, userId),
+  sessionStats: (sessionId: string, userId?: string) =>
+    request<Record<string, number>>(
+      `/sessions/${sessionId}/stats`,
+      undefined,
+      userId,
+    ),
+  files: (sessionId: string, userId?: string) =>
     request<{
-      events: Array<{
-        event_id: string;
-        type: string;
-        payload: Record<string, unknown>;
-        timestamp: string;
-      }>;
-    }>("/events?limit=30"),
-  artifacts: () =>
-    request<{
-      artifacts: Array<{
-        artifact_id: string;
-        name: string;
-        media_type: string;
-        size: number;
-        version: number;
-        created_at: string;
-        metadata: Record<string, unknown>;
-      }>;
-    }>("/artifacts"),
-  executions: () =>
-    request<{
-      executions: Array<{
-        record_id: string;
-        tool: string;
-        success: boolean;
-        duration: number;
-        error: string | null;
-        created_at: string;
-      }>;
-    }>("/executions?limit=30"),
-  artifactUrl: (id: string) => `${API_URL}/artifacts/${id}`,
-  startAutonomous: (goal: string, sessionId?: string | null, maxSteps?: number) =>
-    request<Record<string, any>>("/agent/autonomous", {
+      uploads: Array<{ name: string; size: number }>;
+      artifacts: Array<{ name: string; size: number }>;
+      workspace: Array<{ name: string; size: number }>;
+    }>(`/sessions/${sessionId}/files`, undefined, userId),
+  upload: async (sessionId: string, file: File, userId?: string) => {
+    const body = new FormData();
+    body.append("file", file);
+    const response = await fetch(`${API_URL}/sessions/${sessionId}/upload`, {
       method: "POST",
-      body: JSON.stringify({
-        goal,
-        session_id: sessionId || null,
-        max_steps: maxSteps ?? null,
-        auto_approve: true,
-      }),
-    }),
-  getRun: (runId: string) => request<Record<string, any>>(`/agent/runs/${runId}`),
-  approveRun: (runId: string) =>
-    request<{ run_id: string; status: string }>(`/agent/runs/${runId}/approve`, {
-      method: "POST",
-      body: "{}",
-    }),
-  sandboxStatus: () => request<Record<string, unknown>>("/sandbox/status"),
+      headers: userId ? { "X-Forge-User": userId } : {},
+      body,
+    });
+    if (!response.ok) throw new Error(await response.text());
+    return response.json();
+  },
+  streamUrl: (sessionId: string) => `${API_URL}/sessions/${sessionId}/stream`,
+  tools: () => request<{ tools: Array<{ name: string; description: string }> }>("/tools"),
 };
 
 export { API_URL };

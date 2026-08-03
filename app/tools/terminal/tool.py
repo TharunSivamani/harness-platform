@@ -6,7 +6,7 @@ from app.runtime.sandbox import sandbox_manager
 from app.schemas.tool_manifest import ToolManifest
 from app.schemas.tool_result import ToolResult
 from app.tools.base import BaseTool
-from app.tools.filesystem.paths import get_workspace_root
+from app.tools.workspace_paths import session_workspace
 
 manifest = ToolManifest(
     name="terminal",
@@ -53,7 +53,7 @@ class TerminalTool(BaseTool):
                     f"Command '{executable_name}' is not allowlisted."
                 )
 
-            workdir = get_workspace_root()
+            workdir = session_workspace()
 
             if settings.SANDBOX_FOR_TERMINAL:
                 sandbox = await sandbox_manager.execute(

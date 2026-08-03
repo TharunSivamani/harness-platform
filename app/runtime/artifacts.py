@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from app.core.config import settings
+from app.storage.paths import paths
 
 
 @dataclass
@@ -31,7 +31,7 @@ class ArtifactManager:
     """
 
     def __init__(self, root: str | Path | None = None):
-        self.root = Path(root or settings.ARTIFACT_ROOT).resolve()
+        self.root = Path(root or (paths.root / "artifacts")).resolve()
         self.root.mkdir(parents=True, exist_ok=True)
         self._index_path = self.root / "index.json"
         self._artifacts: dict[str, Artifact] = {}

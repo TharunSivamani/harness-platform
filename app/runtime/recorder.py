@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from app.core.config import settings
+from app.storage.paths import paths
 
 
 @dataclass
@@ -33,7 +33,7 @@ class ExecutionRecorder:
     """
 
     def __init__(self, path: str | Path | None = None):
-        self.path = Path(path or Path(settings.WORKSPACE_ROOT) / "execution_log.jsonl")
+        self.path = Path(path or paths.root / "execution_log.jsonl")
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._records: dict[str, ExecutionRecord] = {}
 

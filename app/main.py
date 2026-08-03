@@ -2,31 +2,20 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from app.agents.orchestrator import MultiAgentOrchestrator
-from app.agents.planner import PlannerAgent
-from app.agents.runner import agent_runner
+from app.agents.chat_loop import chat_loop
 from app.core.config import settings
-from app.kernel.kernel import ExecutionKernel
-from app.memory.session import session_manager
-from app.memory.system import memory_system
 from app.observability.metrics import metrics
-from app.runtime.artifacts import artifact_manager
-from app.runtime.events import event_bus
-from app.runtime.queue import task_queue
-from app.runtime.recorder import execution_recorder
 from app.runtime.sandbox import sandbox_manager
-from app.runtime.scheduler import resource_scheduler
-from app.runtime.state import TaskState, state_machine
-from app.runtime.workflow import WorkflowEngine, WorkflowNode
-from app.runtime.workspace import workspace_manager
-from app.security.auth import require_api_key, resolve_role
+from app.security.auth import require_api_key
 from app.storage.db import storage
+from app.storage.paths import paths
 from app.tools.loader import load_plugins, registry
 
 load_plugins()
@@ -45,67 +34,40 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-planner = PlannerAgent()
-orchestrator = MultiAgentOrchestrator()
-kernel = ExecutionKernel()
+
+class UserCreate(BaseModel):
+    name: str = Field(..., min_length=1)
+    role: str = "member"
 
 
-class AgentRunRequest(BaseModel):
-    input: str = Field(..., min_length=1)
-    session_id: str | None = None
-
-
-class SessionCreateRequest(BaseModel):
-    metadata: dict = Field(default_factory=dict)
-
-
-class MemoryStoreRequest(BaseModel):
-    content: str = Field(..., min_length=1)
-    tags: list[str] = Field(default_factory=list)
+class SessionCreate(BaseModel):
+    title: str = "New chat"
+    user_id: str | None = None
 
 
 class ChatRequest(BaseModel):
-    message: str = Field(..., min_length=1)
-    session_id: str | None = None
+    content: str = Field(..., min_length=1)
+    user_id: str | None = None
 
 
-class ToolExecuteRequest(BaseModel):
-    tool: str
-    arguments: dict = Field(default_factory=dict)
-
-
-class WorkflowRequest(BaseModel):
-    input: str = Field(..., min_length=1)
-
-
-class UploadRequest(BaseModel):
-    name: str
-    content: str
-    media_type: str = "text/plain"
-    workspace_id: str | None = None
-
-
-class AutonomousRequest(BaseModel):
-    goal: str = Field(..., min_length=1)
-    session_id: str | None = None
-    max_steps: int | None = None
-    auto_approve: bool | None = None
+def resolve_user_id(x_forge_user: str | None = Header(default=None)) -> str:
+    return x_forge_user or settings.DEFAULT_USER_ID
 
 
 @app.on_event("startup")
 async def on_startup():
-    async def _tool_job(job):
-        return await kernel.execute(job.payload["tool"], **job.payload.get("arguments", {}))
-
-    task_queue.register("tool.execute", _tool_job)
-    await task_queue.start()
+    storage.ensure_default_user()
     metrics.incr("app.startup")
-    storage.audit("startup", {"version": settings.APP_VERSION})
+    storage.audit("startup", {"version": settings.APP_VERSION, "home": str(settings.forge_home)})
 
 
 @app.get("/")
 async def root():
-    return {"message": "Welcome to ForgeAI!"}
+    return {
+        "message": "Welcome to ForgeAI!",
+        "forge_home": str(settings.forge_home),
+        "version": settings.APP_VERSION,
+    }
 
 
 @app.get("/health")
@@ -115,178 +77,7 @@ async def health():
 
 @app.get("/tools")
 async def list_tools():
-    manifests = registry.discover()
-    return {"tools": [manifest.model_dump() for manifest in manifests]}
-
-
-@app.get("/metrics")
-async def get_metrics():
-    snapshot = metrics.snapshot()
-    snapshot["resources"] = resource_scheduler.usage
-    return snapshot
-
-
-@app.post("/session")
-async def create_session(request: SessionCreateRequest | None = None):
-    metadata = request.metadata if request else {}
-    session = session_manager.create(metadata=metadata)
-    workspace = workspace_manager.create(session_id=session.session_id)
-    return {
-        "session_id": session.session_id,
-        "workspace_id": workspace.workspace_id,
-        "workspace_path": str(workspace.path),
-        "created_at": session.created_at,
-    }
-
-
-@app.get("/sessions")
-async def list_sessions():
-    return {"sessions": session_manager.list_sessions()}
-
-
-@app.get("/session/{session_id}")
-async def get_session(session_id: str):
-    try:
-        session = session_manager.get(session_id)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-
-    return {
-        "session_id": session.session_id,
-        "created_at": session.created_at,
-        "summary": session.summary,
-        "messages": [
-            {
-                "role": message.role,
-                "content": message.content,
-                "timestamp": message.timestamp,
-                "metadata": message.metadata,
-            }
-            for message in session.messages
-        ],
-    }
-
-
-@app.post("/memory")
-async def store_memory(request: MemoryStoreRequest):
-    item = memory_system.remember(content=request.content, tags=request.tags)
-    return {
-        "memory_id": item.memory_id,
-        "content": item.content,
-        "tags": item.tags,
-    }
-
-
-@app.get("/memory")
-async def recall_memory(query: str, limit: int = 5):
-    items = memory_system.recall(query=query, limit=limit)
-    return {
-        "results": [
-            {
-                "memory_id": item.memory_id,
-                "content": item.content,
-                "tags": item.tags,
-                "created_at": item.created_at,
-            }
-            for item in items
-        ]
-    }
-
-
-@app.post("/chat")
-async def chat(request: ChatRequest, role: str = Depends(resolve_role)):
-    metrics.incr("chat.requests")
-    task = state_machine.create(request.message)
-    state_machine.transition(task.task_id, TaskState.PLANNING)
-    await event_bus.publish("TaskStarted", {"task_id": task.task_id})
-
-    run = AgentRunRequest(input=request.message, session_id=request.session_id)
-    result = await _run_agent(run, role=role)
-
-    state_machine.transition(
-        task.task_id,
-        TaskState.COMPLETED if result.get("success") else TaskState.FAILED,
-        output=result.get("output"),
-        error=result.get("error"),
-    )
-    await event_bus.publish("TaskCompleted", {"task_id": task.task_id, "result": result})
-    return {"task_id": task.task_id, **result}
-
-
-@app.post("/agent/run")
-async def agent_run(request: AgentRunRequest, role: str = Depends(resolve_role)):
-    return await _run_agent(request, role=role)
-
-
-@app.post("/agent/multi")
-async def agent_multi(request: AgentRunRequest):
-    result = await orchestrator.run(request.input)
-    return result.model_dump()
-
-
-@app.post("/agent/autonomous")
-async def agent_autonomous(
-    request: AutonomousRequest,
-    role: str = Depends(resolve_role),
-):
-    metrics.incr("agent.autonomous")
-    run = await agent_runner.start(
-        goal=request.goal,
-        session_id=request.session_id,
-        max_steps=request.max_steps,
-        role=role,
-        auto_approve=request.auto_approve,
-    )
-    return agent_runner.serialize(run)
-
-
-@app.get("/agent/runs/{run_id}")
-async def get_agent_run(run_id: str):
-    try:
-        run = agent_runner.get(run_id)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return agent_runner.serialize(run)
-
-
-@app.post("/agent/runs/{run_id}/approve")
-async def approve_agent_run(run_id: str):
-    try:
-        await agent_runner.approve(run_id)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return {"run_id": run_id, "status": "approved"}
-
-
-@app.get("/agent/runs/{run_id}/stream")
-async def stream_agent_run(run_id: str):
-    try:
-        run = agent_runner.get(run_id)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-
-    queue = agent_runner.subscribe(run_id)
-
-    async def event_generator():
-        try:
-            yield f"data: {json.dumps({'type': 'snapshot', 'payload': agent_runner.serialize(run)})}\n\n"
-            while True:
-                try:
-                    event = await asyncio.wait_for(queue.get(), timeout=15.0)
-                except TimeoutError:
-                    yield f"data: {json.dumps({'type': 'heartbeat'})}\n\n"
-                    current = agent_runner.get(run_id)
-                    if current.status in {"completed", "failed"}:
-                        break
-                    continue
-
-                yield f"data: {json.dumps(event, default=str)}\n\n"
-                if event.get("type") in {"RunCompleted", "RunFailed"}:
-                    break
-        finally:
-            agent_runner.unsubscribe(run_id, queue)
-
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
+    return {"tools": [item.model_dump() for item in registry.discover()]}
 
 
 @app.get("/sandbox/status")
@@ -298,204 +89,204 @@ async def sandbox_status():
         "timeout_seconds": settings.SANDBOX_TIMEOUT_SECONDS,
         "network": settings.SANDBOX_NETWORK,
         "docker_image": settings.DOCKER_IMAGE,
-        "terminal_uses_sandbox": settings.SANDBOX_FOR_TERMINAL,
-        "python_scripts_use_sandbox": settings.SANDBOX_FOR_PYTHON_SCRIPTS,
         "active": sandbox_manager.list_active(),
+        "forge_home": str(settings.forge_home),
     }
 
 
-@app.post("/tool")
-async def execute_tool(request: ToolExecuteRequest, role: str = Depends(resolve_role)):
-    metrics.incr("tool.requests")
-    result = await kernel.execute(request.tool, role=role, **request.arguments)
-    return result.model_dump()
+@app.post("/users")
+async def create_user(request: UserCreate):
+    return storage.create_user(name=request.name, role=request.role)
 
 
-@app.post("/workflow")
-async def run_workflow(request: WorkflowRequest):
-    metrics.incr("workflow.requests")
-    task = state_machine.create(request.input)
-    state_machine.transition(task.task_id, TaskState.PLANNING)
+@app.get("/users")
+async def list_users():
+    return {"users": storage.list_users()}
 
-    engine = WorkflowEngine()
-    workflow_id = engine.create()
 
-    async def research_step(context, outputs):
-        return await kernel.execute("search", query=context["input"], max_results=3)
+@app.get("/users/me")
+async def users_me(user_id: str = Depends(resolve_user_id)):
+    user = storage.get_user(user_id) or storage.ensure_default_user()
+    stats = storage.user_stats(user["user_id"])
+    return {**user, "stats": stats}
 
-    async def python_step(context, outputs):
-        return await kernel.execute("python", code="sum([1, 2, 3])")
 
-    async def review_step(context, outputs):
-        return {"reviewed_nodes": list(outputs.keys())}
+@app.post("/sessions")
+async def create_session(
+    request: SessionCreate | None = None,
+    user_id: str = Depends(resolve_user_id),
+):
+    uid = (request.user_id if request else None) or user_id
+    if not storage.get_user(uid):
+        raise HTTPException(status_code=404, detail="User not found")
+    title = request.title if request else "New chat"
+    return storage.create_session(uid, title=title)
 
-    engine.add_node(
-        workflow_id,
-        WorkflowNode(node_id="research", name="research", handler=research_step),
+
+@app.get("/sessions")
+async def list_sessions(user_id: str = Depends(resolve_user_id)):
+    return {"sessions": storage.list_sessions(user_id)}
+
+
+@app.get("/sessions/{session_id}")
+async def get_session(session_id: str, user_id: str = Depends(resolve_user_id)):
+    session = storage.get_session(session_id)
+    if not session or session["user_id"] != user_id:
+        raise HTTPException(status_code=404, detail="Session not found")
+    meta = paths.read_json(paths.meta_path(user_id, session_id), session)
+    return meta
+
+
+@app.get("/sessions/{session_id}/messages")
+async def get_messages(session_id: str, user_id: str = Depends(resolve_user_id)):
+    session = storage.get_session(session_id)
+    if not session or session["user_id"] != user_id:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return {"messages": storage.list_messages(session_id)}
+
+
+@app.post("/sessions/{session_id}/chat")
+async def session_chat(
+    session_id: str,
+    request: ChatRequest,
+    user_id: str = Depends(resolve_user_id),
+):
+    uid = request.user_id or user_id
+    session = storage.get_session(session_id)
+    if not session or session["user_id"] != uid:
+        raise HTTPException(status_code=404, detail="Session not found")
+    user = storage.get_user(uid)
+    metrics.incr("chat.requests")
+    result = await chat_loop.run(
+        user_id=uid,
+        session_id=session_id,
+        content=request.content,
+        role=user["role"] if user else "owner",
     )
-    engine.add_node(
-        workflow_id,
-        WorkflowNode(
-            node_id="python",
-            name="python",
-            handler=python_step,
-            depends_on=["research"],
-        ),
-    )
-    engine.add_node(
-        workflow_id,
-        WorkflowNode(
-            node_id="review",
-            name="review",
-            handler=review_step,
-            depends_on=["python"],
-        ),
-    )
+    return result
 
-    state_machine.transition(task.task_id, TaskState.RUNNING)
-    result = await engine.run(workflow_id, context={"input": request.input})
-    state_machine.transition(
-        task.task_id,
-        TaskState.COMPLETED if result.success else TaskState.FAILED,
-        output=result.outputs,
-        error=str(result.errors) if result.errors else None,
+
+@app.get("/sessions/{session_id}/stream")
+async def session_stream(session_id: str, user_id: str = Depends(resolve_user_id)):
+    session = storage.get_session(session_id)
+    if not session or session["user_id"] != user_id:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    queue = chat_loop.subscribe(session_id)
+
+    async def event_generator():
+        try:
+            yield f"data: {json.dumps({'type': 'subscribed', 'payload': {'session_id': session_id}})}\n\n"
+            while True:
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=20.0)
+                except TimeoutError:
+                    yield f"data: {json.dumps({'type': 'heartbeat'})}\n\n"
+                    continue
+                yield f"data: {json.dumps(event, default=str)}\n\n"
+                if event.get("type") == "ChatCompleted":
+                    break
+        finally:
+            chat_loop.unsubscribe(session_id, queue)
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+@app.post("/sessions/{session_id}/upload")
+async def upload_file(
+    session_id: str,
+    file: UploadFile = File(...),
+    user_id: str = Depends(resolve_user_id),
+):
+    session = storage.get_session(session_id)
+    if not session or session["user_id"] != user_id:
+        raise HTTPException(status_code=404, detail="Session not found")
+    uploads = paths.uploads_path(user_id, session_id)
+    target = uploads / (file.filename or f"upload-{paths.new_id()}")
+    data = await file.read()
+    target.write_bytes(data)
+    # Also copy into workspace for agent access
+    workspace_copy = paths.workspace_path(user_id, session_id) / target.name
+    workspace_copy.write_bytes(data)
+    storage.add_message(
+        session_id=session_id,
+        user_id=user_id,
+        role="system",
+        content=f"Uploaded file: {target.name}",
+        metadata={"upload": target.name, "bytes": len(data)},
     )
     return {
-        "task_id": task.task_id,
-        "workflow_id": result.workflow_id,
-        "success": result.success,
-        "outputs": {
-            key: value.model_dump() if hasattr(value, "model_dump") else value
-            for key, value in result.outputs.items()
-        },
-        "errors": result.errors,
-    }
-
-
-@app.post("/upload")
-async def upload(request: UploadRequest):
-    workspace = workspace_manager.get_or_create(request.workspace_id)
-    target = workspace_manager.resolve(workspace.workspace_id, f"data/{request.name}")
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(request.content, encoding="utf-8")
-    workspace_manager.enforce_quota(workspace.workspace_id)
-
-    artifact = artifact_manager.store(
-        target,
-        name=request.name,
-        media_type=request.media_type,
-        metadata={"workspace_id": workspace.workspace_id},
-    )
-    await event_bus.publish(
-        "ArtifactCreated",
-        {"artifact_id": artifact.artifact_id, "name": artifact.name},
-    )
-    return {
-        "workspace_id": workspace.workspace_id,
+        "filename": target.name,
+        "bytes": len(data),
         "path": str(target),
-        "artifact_id": artifact.artifact_id,
+        "workspace_path": str(workspace_copy),
     }
 
 
-@app.get("/artifacts")
-async def list_artifacts(name: str | None = None):
-    items = artifact_manager.list(name=name)
-    return {
-        "artifacts": [
+@app.get("/sessions/{session_id}/files")
+async def list_session_files(session_id: str, user_id: str = Depends(resolve_user_id)):
+    session = storage.get_session(session_id)
+    if not session or session["user_id"] != user_id:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    def _list(folder: Path, kind: str):
+        if not folder.exists():
+            return []
+        return [
             {
-                "artifact_id": item.artifact_id,
                 "name": item.name,
-                "media_type": item.media_type,
-                "size": item.size,
-                "version": item.version,
-                "created_at": item.created_at,
-                "metadata": item.metadata,
+                "kind": kind,
+                "size": item.stat().st_size,
+                "path": str(item),
             }
-            for item in items
+            for item in folder.iterdir()
+            if item.is_file()
         ]
-    }
 
-
-@app.get("/artifacts/{artifact_id}")
-async def download_artifact(artifact_id: str):
-    try:
-        artifact = artifact_manager.get(artifact_id)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return FileResponse(artifact.path, media_type=artifact.media_type, filename=artifact.name)
-
-
-@app.get("/events")
-async def list_events(event_type: str | None = None, limit: int = 50):
-    events = event_bus.history(event_type=event_type, limit=limit)
     return {
-        "events": [
-            {
-                "event_id": event.event_id,
-                "type": event.type,
-                "payload": event.payload,
-                "timestamp": event.timestamp,
-            }
-            for event in events
-        ]
+        "uploads": _list(paths.uploads_path(user_id, session_id), "upload"),
+        "artifacts": _list(paths.artifacts_path(user_id, session_id), "artifact"),
+        "workspace": _list(paths.workspace_path(user_id, session_id), "workspace"),
     }
 
 
-@app.get("/executions")
-async def list_executions(limit: int = 50):
-    records = execution_recorder.list(limit=limit)
-    return {
-        "executions": [
-            {
-                "record_id": record.record_id,
-                "tool": record.tool,
-                "success": record.success,
-                "duration": record.duration,
-                "error": record.error,
-                "created_at": record.created_at,
-            }
-            for record in records
-        ]
+@app.get("/sessions/{session_id}/files/{kind}/{filename}")
+async def download_session_file(
+    session_id: str,
+    kind: str,
+    filename: str,
+    user_id: str = Depends(resolve_user_id),
+):
+    session = storage.get_session(session_id)
+    if not session or session["user_id"] != user_id:
+        raise HTTPException(status_code=404, detail="Session not found")
+    mapping = {
+        "upload": paths.uploads_path(user_id, session_id),
+        "artifact": paths.artifacts_path(user_id, session_id),
+        "workspace": paths.workspace_path(user_id, session_id),
     }
+    folder = mapping.get(kind)
+    if folder is None:
+        raise HTTPException(status_code=400, detail="Invalid kind")
+    target = (folder / filename).resolve()
+    if not target.is_relative_to(folder.resolve()) or not target.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+    return FileResponse(target, filename=filename)
 
 
-@app.get("/workspaces")
-async def list_workspaces():
-    return {"workspaces": workspace_manager.list_workspaces()}
+@app.get("/sessions/{session_id}/stats")
+async def session_stats(session_id: str, user_id: str = Depends(resolve_user_id)):
+    session = storage.get_session(session_id)
+    if not session or session["user_id"] != user_id:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return storage.session_stats(session_id)
 
 
-async def _run_agent(request: AgentRunRequest, role: str = "admin") -> dict:
-    session = None
-    if request.session_id is not None:
-        session = session_manager.get_or_create(request.session_id)
-        session_manager.add_message(session.session_id, "user", request.input)
-        workspace_manager.get_or_create(session.session_id)
+@app.get("/stats/me")
+async def stats_me(user_id: str = Depends(resolve_user_id)):
+    return storage.user_stats(user_id)
 
-    memories = memory_system.recall(request.input, limit=3)
-    enriched_input = request.input
-    if memories:
-        memory_block = "\n".join(f"- {item.content}" for item in memories)
-        enriched_input = (
-            f"Relevant memory:\n{memory_block}\n\nUser request:\n{request.input}"
-        )
 
-    # Temporarily set kernel role via planner kernel
-    planner.kernel.role = role
-    result = await planner.run(enriched_input)
-    metrics.observe("agent.latency", result.execution_time)
-    metrics.incr("agent.success" if result.success else "agent.failure")
-    storage.audit("agent.run", {"input": request.input, "success": result.success})
-
-    if session is not None:
-        session_manager.add_message(
-            session.session_id,
-            "assistant",
-            str(result.output if result.success else result.error),
-            metadata={"success": result.success},
-        )
-        memory_system.summarize_session(session.session_id)
-
-    payload = result.model_dump()
-    if session is not None:
-        payload["session_id"] = session.session_id
-    return payload
+@app.get("/metrics")
+async def get_metrics():
+    return metrics.snapshot()

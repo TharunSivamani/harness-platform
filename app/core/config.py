@@ -1,26 +1,33 @@
+from pathlib import Path
+
 from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
     APP_NAME: str = "ForgeAI"
-    APP_VERSION: str = "0.1.0"
+    APP_VERSION: str = "0.2.0"
 
     HOST: str = "0.0.0.0"
     PORT: int = 8000
 
+    FORGE_HOME: str = "./data"
+    DEFAULT_USER_ID: str = "local"
+    DEFAULT_USER_NAME: str = "Local User"
+    DEFAULT_ROLE: str = "owner"
+
     OPENAI_API_KEY: str | None = None
     MODEL_NAME: str = "gpt-4.1-mini"
 
-    WORKSPACE_ROOT: str = "./workspace"
-    ARTIFACT_ROOT: str = "./artifacts"
-    TERMINAL_TIMEOUT_SECONDS: int = 10
-    TERMINAL_ALLOWLIST: str = "dir,ls,echo,type,cat,pwd,cd,whoami,python,python3,pip"
+    TERMINAL_TIMEOUT_SECONDS: int = 30
+    TERMINAL_ALLOWLIST: str = (
+        "dir,ls,echo,type,cat,pwd,cd,whoami,python,python3,pip,mkdir,rm,cp,mv,git"
+    )
 
     BROWSER_TIMEOUT_SECONDS: int = 30
     BROWSER_MAX_TEXT_CHARS: int = 8000
 
     LLM_PROVIDER: str = "openai"
-    LLM_FALLBACK_PROVIDERS: str = "ollama,vllm"
+    LLM_FALLBACK_PROVIDERS: str = ""
     PLANNER_MODE: str = "auto"
     ANTHROPIC_API_KEY: str | None = None
     OLLAMA_BASE_URL: str = "http://localhost:11434"
@@ -32,22 +39,30 @@ class Settings(BaseSettings):
     SANDBOX_TIMEOUT_SECONDS: int = 30
     SANDBOX_NETWORK: bool = False
     DOCKER_IMAGE: str = "python:3.11-slim"
+    SANDBOX_FOR_TERMINAL: bool = True
+    SANDBOX_FOR_PYTHON_SCRIPTS: bool = True
 
     API_KEY: str | None = None
-    DEFAULT_ROLE: str = "admin"
-    DATABASE_URL: str = "sqlite:///./forgeai.db"
     MAX_WORKSPACE_BYTES: int = 100 * 1024 * 1024
     TASK_WORKERS: int = 2
     CORS_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000"
 
-    AGENT_MAX_STEPS: int = 8
+    AGENT_MAX_STEPS: int = 12
     AGENT_AUTO_APPROVE: bool = True
-    AGENT_APPROVAL_TOOLS: str = "terminal,filesystem,browser"
-    SANDBOX_FOR_TERMINAL: bool = True
-    SANDBOX_FOR_PYTHON_SCRIPTS: bool = True
+    AGENT_APPROVAL_TOOLS: str = "terminal,write_file,patch,browser"
 
     class Config:
         env_file = ".env"
+
+    @property
+    def forge_home(self) -> Path:
+        path = Path(self.FORGE_HOME).resolve()
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    @property
+    def database_path(self) -> Path:
+        return self.forge_home / "forge.db"
 
     @property
     def terminal_allowlist(self) -> set[str]:
