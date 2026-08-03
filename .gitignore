@@ -220,6 +220,7 @@ __marimo__/
 # ForgeAI workspace runtime files
 workspace/*
 !workspace/.gitkeep
+!workspace/README.md
 artifacts/
 forgeai.db
 *.db
