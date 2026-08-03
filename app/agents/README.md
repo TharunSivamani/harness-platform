@@ -1,0 +1,37 @@
+# `app/agents/`
+
+Agents decide *what* should happen. They never import concrete tools directly for discovery — they go through the kernel/registry.
+
+## Files
+
+| File | Purpose |
+|------|---------|
+| `base.py` | Abstract `BaseAgent` with `async run(user_input) -> ToolResult` |
+| `planner.py` | Main planner: LLM router (auto) or keyword selector + argument building |
+| `research.py` | Research-focused agent (prefers search) |
+| `coding.py` | Coding-focused agent (python/filesystem) |
+| `reviewer.py` | Lightweight result review/approval notes |
+| `executor.py` | Explicit `tool: args` executor |
+| `orchestrator.py` | Routes to specialized agents, then reviews output |
+
+## Examples
+
+```python
+import asyncio
+from app.agents.planner import PlannerAgent
+
+async def main():
+    planner = PlannerAgent()
+    result = await planner.run("calculate 2 + 2")
+    print(result.output)
+
+asyncio.run(main())
+```
+
+```python
+from app.agents.orchestrator import MultiAgentOrchestrator
+
+orch = MultiAgentOrchestrator()
+result = await orch.run("research Python asyncio")
+print(result.output["agent"], result.output["review"])
+```
