@@ -7,6 +7,8 @@ Priority-0 runtime services that turn ForgeAI into an execution platform.
 | File | Purpose |
 |------|---------|
 | `sandbox.py` | `SandboxManager` — local/Docker ephemeral command execution |
+
+See also [docs/SANDBOXES.md](../../docs/SANDBOXES.md).
 | `workspace.py` | `WorkspaceManager` — per-session isolated folders + quotas |
 | `artifacts.py` | `ArtifactManager` — versioned output storage |
 | `events.py` | `EventBus` — publish/subscribe + history |

@@ -23,6 +23,7 @@ ALLOWED_TRANSITIONS: dict[TaskState, set[TaskState]] = {
     TaskState.PLANNING: {TaskState.WAITING, TaskState.RUNNING, TaskState.FAILED},
     TaskState.WAITING: {TaskState.RUNNING, TaskState.PAUSED, TaskState.FAILED},
     TaskState.RUNNING: {
+        TaskState.WAITING,
         TaskState.PAUSED,
         TaskState.RETRYING,
         TaskState.COMPLETED,

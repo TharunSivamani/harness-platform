@@ -36,6 +36,13 @@ npm run dev
 
 - API docs: `http://127.0.0.1:8000/docs`
 - Console UI: `http://localhost:3000`
+- Autonomous run UI: `http://localhost:3000/run`
+
+### Docs
+
+- [Autonomous harness](docs/AUTONOMOUS.md)
+- [Sandboxes](docs/SANDBOXES.md)
+- Folder READMEs under `app/**` and `frontend/`
 
 ### Docker
 
@@ -68,7 +75,11 @@ Artifacts / Workspace / Metrics
 | Method | Path | Purpose |
 |--------|------|---------|
 | `POST` | `/chat` | Chat with task state tracking |
-| `POST` | `/agent/run` | Run planner agent |
+| `POST` | `/agent/run` | Run planner agent (single-shot) |
+| `POST` | `/agent/autonomous` | Start multi-step autonomous harness run |
+| `GET` | `/agent/runs/{id}` | Autonomous run snapshot |
+| `GET` | `/agent/runs/{id}/stream` | SSE live run events |
+| `POST` | `/agent/runs/{id}/approve` | Approve gated tool step |
 | `POST` | `/agent/multi` | Multi-agent orchestration |
 | `POST` | `/workflow` | Run research→python→review workflow |
 | `POST` | `/tool` | Execute a tool directly |
@@ -78,6 +89,7 @@ Artifacts / Workspace / Metrics
 | `GET` | `/sessions` | List sessions |
 | `POST` | `/session` | Create session + workspace |
 | `GET` | `/tools` | Discover tool manifests |
+| `GET` | `/sandbox/status` | Sandbox backend + limits |
 | `GET` | `/metrics` | Runtime metrics |
 | `GET` | `/events` | Event bus history |
 | `GET` | `/health` | Health check |
@@ -143,7 +155,9 @@ Each folder has its own `README.md` with file-level descriptions and examples.
 | 5 Memory | Done (session + long-term keyword memory) |
 | 6 Multi-agent | Done (planner/research/coding/reviewer/executor) |
 | Priority 0 runtime | Done (sandbox, workspace, artifacts, events, state, workflow, queue, permissions, scheduler, recorder) |
-| Enterprise (full OTel/K8s/frontend) | Partial foundations |
+| Frontend console | Done (chat/tools/sessions/artifacts/ops/run) |
+| Autonomous harness | Done (multi-step loop + SSE + approvals) |
+| Enterprise (full OTel/K8s/Firecracker) | Partial foundations |
 
 ## License
 

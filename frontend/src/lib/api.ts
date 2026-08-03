@@ -110,6 +110,23 @@ export const api = {
       }>;
     }>("/executions?limit=30"),
   artifactUrl: (id: string) => `${API_URL}/artifacts/${id}`,
+  startAutonomous: (goal: string, sessionId?: string | null, maxSteps?: number) =>
+    request<Record<string, any>>("/agent/autonomous", {
+      method: "POST",
+      body: JSON.stringify({
+        goal,
+        session_id: sessionId || null,
+        max_steps: maxSteps ?? null,
+        auto_approve: true,
+      }),
+    }),
+  getRun: (runId: string) => request<Record<string, any>>(`/agent/runs/${runId}`),
+  approveRun: (runId: string) =>
+    request<{ run_id: string; status: string }>(`/agent/runs/${runId}/approve`, {
+      method: "POST",
+      body: "{}",
+    }),
+  sandboxStatus: () => request<Record<string, unknown>>("/sandbox/status"),
 };
 
 export { API_URL };

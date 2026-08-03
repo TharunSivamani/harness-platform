@@ -1,8 +1,8 @@
-import asyncio
 import shlex
 import time
 
 from app.core.config import settings
+from app.runtime.sandbox import sandbox_manager
 from app.schemas.tool_manifest import ToolManifest
 from app.schemas.tool_result import ToolResult
 from app.tools.base import BaseTool
@@ -10,7 +10,7 @@ from app.tools.filesystem.paths import get_workspace_root
 
 manifest = ToolManifest(
     name="terminal",
-    description="Run allowlisted shell commands inside the workspace.",
+    description="Run allowlisted shell commands inside the workspace sandbox.",
     keywords=[
         "terminal",
         "shell",
@@ -44,7 +44,6 @@ class TerminalTool(BaseTool):
                 raise ValueError("Command must not be empty.")
 
             executable = parts[0].lower()
-            # Strip path prefixes like .\python or /usr/bin/ls
             executable_name = executable.replace("\\", "/").split("/")[-1]
             if executable_name.endswith(".exe"):
                 executable_name = executable_name[:-4]
@@ -54,14 +53,35 @@ class TerminalTool(BaseTool):
                     f"Command '{executable_name}' is not allowlisted."
                 )
 
-            # Use a shell so Windows builtins (echo, dir, etc.) resolve.
+            workdir = get_workspace_root()
+
+            if settings.SANDBOX_FOR_TERMINAL:
+                sandbox = await sandbox_manager.execute(
+                    command,
+                    workdir=workdir,
+                    timeout=settings.TERMINAL_TIMEOUT_SECONDS,
+                )
+                return ToolResult(
+                    success=sandbox.success,
+                    output=sandbox.stdout.strip() or None,
+                    error=None if sandbox.success else (sandbox.stderr.strip() or f"Exit {sandbox.exit_code}"),
+                    execution_time=time.perf_counter() - start,
+                    metadata={
+                        "returncode": sandbox.exit_code,
+                        "command": command,
+                        "sandbox_id": sandbox.sandbox_id,
+                        "sandbox": sandbox.metadata,
+                    },
+                )
+
+            import asyncio
+
             process = await asyncio.create_subprocess_shell(
                 command,
-                cwd=str(get_workspace_root()),
+                cwd=str(workdir),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-
             try:
                 stdout, stderr = await asyncio.wait_for(
                     process.communicate(),
@@ -71,13 +91,11 @@ class TerminalTool(BaseTool):
                 process.kill()
                 await process.communicate()
                 raise TimeoutError(
-                    f"Command timed out after "
-                    f"{settings.TERMINAL_TIMEOUT_SECONDS} seconds."
+                    f"Command timed out after {settings.TERMINAL_TIMEOUT_SECONDS} seconds."
                 )
 
             output = stdout.decode(errors="replace").strip()
             error_output = stderr.decode(errors="replace").strip()
-
             if process.returncode != 0:
                 return ToolResult(
                     success=False,

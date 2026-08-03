@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import asyncio
+import json
+
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.agents.orchestrator import MultiAgentOrchestrator
 from app.agents.planner import PlannerAgent
+from app.agents.runner import agent_runner
 from app.core.config import settings
 from app.kernel.kernel import ExecutionKernel
 from app.memory.session import session_manager
@@ -16,6 +20,7 @@ from app.runtime.artifacts import artifact_manager
 from app.runtime.events import event_bus
 from app.runtime.queue import task_queue
 from app.runtime.recorder import execution_recorder
+from app.runtime.sandbox import sandbox_manager
 from app.runtime.scheduler import resource_scheduler
 from app.runtime.state import TaskState, state_machine
 from app.runtime.workflow import WorkflowEngine, WorkflowNode
@@ -78,6 +83,13 @@ class UploadRequest(BaseModel):
     content: str
     media_type: str = "text/plain"
     workspace_id: str | None = None
+
+
+class AutonomousRequest(BaseModel):
+    goal: str = Field(..., min_length=1)
+    session_id: str | None = None
+    max_steps: int | None = None
+    auto_approve: bool | None = None
 
 
 @app.on_event("startup")
@@ -210,6 +222,86 @@ async def agent_run(request: AgentRunRequest, role: str = Depends(resolve_role))
 async def agent_multi(request: AgentRunRequest):
     result = await orchestrator.run(request.input)
     return result.model_dump()
+
+
+@app.post("/agent/autonomous")
+async def agent_autonomous(
+    request: AutonomousRequest,
+    role: str = Depends(resolve_role),
+):
+    metrics.incr("agent.autonomous")
+    run = await agent_runner.start(
+        goal=request.goal,
+        session_id=request.session_id,
+        max_steps=request.max_steps,
+        role=role,
+        auto_approve=request.auto_approve,
+    )
+    return agent_runner.serialize(run)
+
+
+@app.get("/agent/runs/{run_id}")
+async def get_agent_run(run_id: str):
+    try:
+        run = agent_runner.get(run_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return agent_runner.serialize(run)
+
+
+@app.post("/agent/runs/{run_id}/approve")
+async def approve_agent_run(run_id: str):
+    try:
+        await agent_runner.approve(run_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"run_id": run_id, "status": "approved"}
+
+
+@app.get("/agent/runs/{run_id}/stream")
+async def stream_agent_run(run_id: str):
+    try:
+        run = agent_runner.get(run_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    queue = agent_runner.subscribe(run_id)
+
+    async def event_generator():
+        try:
+            yield f"data: {json.dumps({'type': 'snapshot', 'payload': agent_runner.serialize(run)})}\n\n"
+            while True:
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=15.0)
+                except TimeoutError:
+                    yield f"data: {json.dumps({'type': 'heartbeat'})}\n\n"
+                    current = agent_runner.get(run_id)
+                    if current.status in {"completed", "failed"}:
+                        break
+                    continue
+
+                yield f"data: {json.dumps(event, default=str)}\n\n"
+                if event.get("type") in {"RunCompleted", "RunFailed"}:
+                    break
+        finally:
+            agent_runner.unsubscribe(run_id, queue)
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+@app.get("/sandbox/status")
+async def sandbox_status():
+    return {
+        "backend": settings.SANDBOX_BACKEND,
+        "cpu_limit": settings.SANDBOX_CPU_LIMIT,
+        "memory_mb": settings.SANDBOX_MEMORY_MB,
+        "timeout_seconds": settings.SANDBOX_TIMEOUT_SECONDS,
+        "network": settings.SANDBOX_NETWORK,
+        "docker_image": settings.DOCKER_IMAGE,
+        "terminal_uses_sandbox": settings.SANDBOX_FOR_TERMINAL,
+        "python_scripts_use_sandbox": settings.SANDBOX_FOR_PYTHON_SCRIPTS,
+        "active": sandbox_manager.list_active(),
+    }
 
 
 @app.post("/tool")

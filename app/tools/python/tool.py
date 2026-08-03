@@ -6,6 +6,7 @@ from typing import Any
 from app.schemas.tool_manifest import ToolManifest
 from app.schemas.tool_result import ToolResult
 from app.tools.base import BaseTool
+from app.core.config import settings
 
 manifest = ToolManifest(
     name="python",
@@ -136,7 +137,7 @@ class RestrictedPythonEvaluator(ast.NodeVisitor):
 class PythonTool(BaseTool):
     manifest = manifest
 
-    async def execute(self, code: str) -> ToolResult:
+    async def execute(self, code: str, mode: str = "auto") -> ToolResult:
         start = time.perf_counter()
 
         try:
@@ -144,12 +145,42 @@ class PythonTool(BaseTool):
             if not code:
                 raise ValueError("Code must not be empty.")
 
+            use_sandbox = mode == "script" or (
+                mode == "auto"
+                and settings.SANDBOX_FOR_PYTHON_SCRIPTS
+                and ("\n" in code or "import " in code or "print(" in code)
+            )
+
+            if use_sandbox:
+                from app.runtime.sandbox import sandbox_manager
+                from app.tools.filesystem.paths import get_workspace_root
+
+                workdir = get_workspace_root()
+                script_path = workdir / "_forge_script.py"
+                script_path.write_text(code, encoding="utf-8")
+                sandbox = await sandbox_manager.execute(
+                    ["python", str(script_path.name)],
+                    workdir=workdir,
+                )
+                return ToolResult(
+                    success=sandbox.success,
+                    output=sandbox.stdout.strip() or None,
+                    error=None if sandbox.success else sandbox.stderr.strip(),
+                    execution_time=time.perf_counter() - start,
+                    metadata={
+                        "mode": "sandbox",
+                        "sandbox_id": sandbox.sandbox_id,
+                        "sandbox": sandbox.metadata,
+                    },
+                )
+
             result = RestrictedPythonEvaluator().evaluate(code)
 
             return ToolResult(
                 success=True,
                 output=result,
                 execution_time=time.perf_counter() - start,
+                metadata={"mode": "restricted-ast"},
             )
 
         except Exception as e:

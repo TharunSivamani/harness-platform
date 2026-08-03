@@ -8,11 +8,23 @@ Agents decide *what* should happen. They never import concrete tools directly fo
 |------|---------|
 | `base.py` | Abstract `BaseAgent` with `async run(user_input) -> ToolResult` |
 | `planner.py` | Main planner: LLM router (auto) or keyword selector + argument building |
+| `runner.py` | **Autonomous multi-step harness** (plan→tool→observe loop + SSE events) |
 | `research.py` | Research-focused agent (prefers search) |
 | `coding.py` | Coding-focused agent (python/filesystem) |
 | `reviewer.py` | Lightweight result review/approval notes |
 | `executor.py` | Explicit `tool: args` executor |
 | `orchestrator.py` | Routes to specialized agents, then reviews output |
+
+## Autonomous example
+
+```python
+from app.agents.runner import agent_runner
+
+run = await agent_runner.start("calculate 2+2", auto_approve=True)
+# poll agent_runner.get(run.run_id) or subscribe to SSE
+```
+
+See [docs/AUTONOMOUS.md](../../docs/AUTONOMOUS.md).
 
 ## Examples
 

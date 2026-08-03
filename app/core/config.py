@@ -40,6 +40,12 @@ class Settings(BaseSettings):
     TASK_WORKERS: int = 2
     CORS_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000"
 
+    AGENT_MAX_STEPS: int = 8
+    AGENT_AUTO_APPROVE: bool = True
+    AGENT_APPROVAL_TOOLS: str = "terminal,filesystem,browser"
+    SANDBOX_FOR_TERMINAL: bool = True
+    SANDBOX_FOR_PYTHON_SCRIPTS: bool = True
+
     class Config:
         env_file = ".env"
 
@@ -66,6 +72,14 @@ class Settings(BaseSettings):
             for item in self.CORS_ORIGINS.split(",")
             if item.strip()
         ]
+
+    @property
+    def agent_approval_tools(self) -> set[str]:
+        return {
+            item.strip().lower()
+            for item in self.AGENT_APPROVAL_TOOLS.split(",")
+            if item.strip()
+        }
 
 
 settings = Settings()
