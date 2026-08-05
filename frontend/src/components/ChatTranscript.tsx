@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Message, api } from "@/lib/api";
+import { CopyButton, MarkdownBody } from "@/components/MarkdownBody";
 
 function pretty(content: string) {
   try {
@@ -165,11 +166,10 @@ function ToolChip({ message }: { message: Message }) {
   const info = summarizeTool(message);
   return (
     <div
-      className={`rounded-xl border px-3 py-2 ${
-        info.success
+      className={`rounded-xl border px-3 py-2 ${info.success
           ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-100"
           : "border-red-400/30 bg-red-500/10 text-red-100"
-      }`}
+        }`}
     >
       <button
         type="button"
@@ -277,11 +277,10 @@ export function ChatTranscript({
           return (
             <div
               key={item.id}
-              className={`max-w-3xl space-y-2 rounded-2xl border px-4 py-3 ${
-                failed
+              className={`max-w-3xl space-y-2 rounded-2xl border px-4 py-3 ${failed
                   ? "border-red-400/20 bg-red-500/5"
                   : "border-cyan-500/20 bg-cyan-500/5"
-              }`}
+                }`}
             >
               <p className="text-[11px] uppercase tracking-wide text-slate-400">
                 {item.messages.length === 1 ? "Tool" : `${item.messages.length} tools`}
@@ -316,15 +315,24 @@ export function ChatTranscript({
                 : "bg-white/5 text-slate-100"
             }`}
           >
-            <p className="mb-1 text-[11px] uppercase tracking-wide opacity-60">{message.role}</p>
+            <div className="mb-1 flex items-center justify-between gap-3">
+              <p className="text-[11px] uppercase tracking-wide opacity-60">{message.role}</p>
+              {item.kind === "assistant" && text && text !== "(attachment)" && (
+                <CopyButton text={text} />
+              )}
+            </div>
             {item.kind === "user" && (
               <AttachmentThumbs sessionId={sessionId} attachments={attachments} />
             )}
             {item.kind === "assistant" && thinking && <ThinkingBlock thinking={thinking} />}
             {text && text !== "(attachment)" && (
-              <pre className="whitespace-pre-wrap font-mono text-[13px] leading-relaxed">
-                {item.kind === "user" ? text : pretty(text)}
-              </pre>
+              item.kind === "user" ? (
+                <pre className="whitespace-pre-wrap font-mono text-[13px] leading-relaxed">
+                  {text}
+                </pre>
+              ) : (
+                <MarkdownBody content={text} showCopy={false} />
+              )
             )}
           </div>
         );

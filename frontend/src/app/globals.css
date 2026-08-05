@@ -11,11 +11,46 @@
   --steel-800: #1a2330;
   --steel-700: #2a3648;
   --steel-300: #9aa8bc;
+  --scrollbar-size: 8px;
+  --scrollbar-track: transparent;
+  --scrollbar-thumb: rgba(154, 168, 188, 0.28);
+  --scrollbar-thumb-hover: rgba(217, 119, 69, 0.55);
 }
 
 html,
 body {
-  min-height: 100%;
+  height: 100%;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+
+*::-webkit-scrollbar {
+  width: var(--scrollbar-size);
+  height: var(--scrollbar-size);
+}
+
+*::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 body {
@@ -56,3 +91,105 @@ body {
 .btn-ghost {
   @apply inline-flex items-center justify-center rounded-lg border border-steel-700 bg-steel-950/50 px-3 py-2 text-sm text-steel-200 transition hover:border-steel-500 hover:bg-steel-800;
 }
+
+.btn-stop {
+  @apply inline-flex items-center justify-center gap-2 rounded-lg border border-red-400/35 bg-red-500/15 px-4 py-2 text-sm font-medium text-red-200 transition hover:border-red-300/50 hover:bg-red-500/25 disabled:cursor-not-allowed disabled:opacity-50;
+}
+
+.forge-md {
+  @apply text-[14px] leading-relaxed text-slate-100;
+}
+
+.forge-md > :first-child {
+  margin-top: 0;
+}
+
+.forge-md > :last-child {
+  margin-bottom: 0;
+}
+
+.forge-md p {
+  @apply my-2.5;
+}
+
+.forge-md h1,
+.forge-md h2,
+.forge-md h3,
+.forge-md h4 {
+  @apply mb-2 mt-4 font-display font-semibold tracking-tight text-slate-50;
+}
+
+.forge-md h1 {
+  @apply text-xl;
+}
+
+.forge-md h2 {
+  @apply text-lg;
+}
+
+.forge-md h3 {
+  @apply text-base;
+}
+
+.forge-md ul,
+.forge-md ol {
+  @apply my-2.5 ml-5 space-y-1;
+}
+
+.forge-md ul {
+  list-style: disc;
+}
+
+.forge-md ol {
+  list-style: decimal;
+}
+
+.forge-md li {
+  @apply pl-0.5;
+}
+
+.forge-md a {
+  @apply text-orange-300 underline decoration-orange-300/40 underline-offset-2 hover:text-orange-200;
+}
+
+.forge-md strong {
+  @apply font-semibold text-slate-50;
+}
+
+.forge-md em {
+  @apply italic text-slate-200;
+}
+
+.forge-md blockquote {
+  @apply my-3 border-l-2 border-orange-400/40 pl-3 text-slate-300;
+}
+
+.forge-md hr {
+  @apply my-4 border-white/10;
+}
+
+.forge-md code {
+  @apply rounded bg-black/35 px-1.5 py-0.5 font-mono text-[12px] text-orange-100;
+}
+
+.forge-md pre {
+  @apply my-3 overflow-x-auto rounded-lg border border-white/10 bg-black/40 p-3;
+}
+
+.forge-md pre code {
+  @apply bg-transparent p-0 text-[12px] leading-relaxed text-slate-200;
+}
+
+.forge-md table {
+  @apply my-3 w-full border-collapse overflow-hidden rounded-lg text-left text-[13px];
+}
+
+.forge-md th,
+.forge-md td {
+  @apply border border-white/10 px-2.5 py-1.5;
+}
+
+.forge-md th {
+  @apply bg-white/5 font-medium text-slate-200;
+}
+

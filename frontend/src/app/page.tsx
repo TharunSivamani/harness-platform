@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Message, ProjectTreeEntry, Session, api } from "@/lib/api";
 import { formatBytes, formatTokens } from "@/lib/format";
 import { ChatTranscript, ThinkingBlock } from "@/components/ChatTranscript";
+import { CopyButton, MarkdownBody } from "@/components/MarkdownBody";
 
 type PendingAttachment = {
   id: string;
@@ -535,16 +536,17 @@ function ChatPageInner() {
             <div className="max-w-3xl rounded-2xl bg-white/5 px-4 py-3 text-sm text-slate-100">
               <div className="mb-2 flex items-center justify-between gap-3">
                 <p className="text-[11px] uppercase tracking-wide opacity-60">assistant</p>
-                <button type="button" className="btn-stop px-3 py-1.5 text-xs" onClick={() => void onStop()}>
-                  <span className="inline-block h-2.5 w-2.5 rounded-[2px] bg-red-300" />
-                  Stop generating
-                </button>
+                <div className="flex items-center gap-2">
+                  {liveContent ? <CopyButton text={liveContent} /> : null}
+                  <button type="button" className="btn-stop px-3 py-1.5 text-xs" onClick={() => void onStop()}>
+                    <span className="inline-block h-2.5 w-2.5 rounded-[2px] bg-red-300" />
+                    Stop generating
+                  </button>
+                </div>
               </div>
               {liveThinking ? <ThinkingBlock thinking={liveThinking} live /> : null}
               {liveContent ? (
-                <pre className="whitespace-pre-wrap font-mono text-[13px] leading-relaxed">
-                  {liveContent}
-                </pre>
+                <MarkdownBody content={liveContent} showCopy={false} />
               ) : (
                 !liveThinking && <p className="text-xs text-slate-400">Starting model…</p>
               )}
