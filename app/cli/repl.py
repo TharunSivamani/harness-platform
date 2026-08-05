@@ -180,7 +180,7 @@ def cmd_help() -> None:
     for cmd, desc in SLASH_COMMANDS:
         print(f"  {accent(cmd):<22} {dim(desc)}")
     print()
-    print(f"  {dim('tip')} start typing {accent('/')} then Tab — or keep typing to filter ({accent('/ex')} → {accent('/exit')})")
+    print(f"  {dim('tip')} start typing {accent('/')} then Tab - or keep typing to filter ({accent('/ex')} -> {accent('/exit')})")
     print()
 
 
