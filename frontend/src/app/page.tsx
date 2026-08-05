@@ -39,9 +39,13 @@ function ChatPageInner() {
   const [previewPath, setPreviewPath] = useState<string | null>(null);
   const [previewContent, setPreviewContent] = useState<string | null>(null);
   const [sandboxLabel, setSandboxLabel] = useState("");
-  const [llmLabel, setLlmLabel] = useState("");
-  const [llmProfiles, setLlmProfiles] = useState<Array<{ name: string }>>([]);
+  const [llmProfiles, setLlmProfiles] = useState<
+    Array<{ name: string; provider: string; model?: string | null; base_url?: string | null }>
+  >([]);
   const [activeProfile, setActiveProfile] = useState<string | null>(null);
+  const [activeModel, setActiveModel] = useState("");
+  const [profileModels, setProfileModels] = useState<string[]>([]);
+  const [showUserSettings, setShowUserSettings] = useState(false);
   const [files, setFiles] = useState<{
     uploads: Array<{ name: string; size: number }>;
     artifacts: Array<{ name: string; size: number }>;
@@ -63,21 +67,63 @@ function ChatPageInner() {
     return data.sessions;
   }
 
-  async function loadProjectTree(sessionId: string, uid = userId, root?: string | null) {
-    const effectiveRoot = root ?? sessions.find((s) => s.session_id === sessionId)?.project_root;
-    if (!effectiveRoot && !root) {
-      // Still try — server knows session project_root
-    }
+  async function loadProjectTree(sessionId: string, uid = userId, _root?: string | null) {
     try {
-      const tree = await api.projectTree(sessionId, ".", 2, uid);
+      const tree = await api.projectTree(sessionId, ".", 3, uid);
       setProjectRoot(tree.project_root);
       setProjectPathInput(tree.project_root);
       setProjectTree(tree.entries);
     } catch {
       setProjectTree([]);
-      if (!root) {
-        setProjectRoot(null);
+    }
+  }
+
+  async function refreshWorkspace(sessionId: string, uid = userId) {
+    try {
+      const [fl, list] = await Promise.all([
+        api.files(sessionId, uid),
+        api.sessions(uid),
+      ]);
+      setFiles(fl);
+      setSessions(list.sessions);
+      const session = list.sessions.find((item) => item.session_id === sessionId);
+      if (session?.project_root) {
+        await loadProjectTree(sessionId, uid, session.project_root);
       }
+    } catch {
+      // best-effort live refresh
+    }
+  }
+
+  async function loadLlmState() {
+    const llm = await api.llmProfiles();
+    setLlmProfiles(
+      llm.profiles.map((item) => ({
+        name: item.name,
+        provider: item.provider,
+        model: item.model,
+        base_url: item.base_url,
+      })),
+    );
+    setActiveProfile(llm.active);
+    setActiveModel(llm.resolved.model || "");
+    if (llm.active) {
+      try {
+        const models = await api.llmModels({
+          provider: llm.resolved.provider,
+          base_url: llm.resolved.base_url,
+          profile: llm.active,
+        });
+        const list = models.models.slice();
+        if (llm.resolved.model && !list.includes(llm.resolved.model)) {
+          list.unshift(llm.resolved.model);
+        }
+        setProfileModels(list);
+      } catch {
+        setProfileModels(llm.resolved.model ? [llm.resolved.model] : []);
+      }
+    } else {
+      setProfileModels(llm.resolved.model ? [llm.resolved.model] : []);
     }
   }
 
@@ -122,16 +168,12 @@ function ChatPageInner() {
           setSandboxLabel("");
         }
         try {
-          const llm = await api.llmProfiles();
-          setLlmProfiles(llm.profiles.map((item) => ({ name: item.name })));
-          setActiveProfile(llm.active);
-          setLlmLabel(
-            `${llm.resolved.profile || "env"} · ${llm.resolved.provider}/${llm.resolved.model}`,
-          );
+          await loadLlmState();
         } catch {
-          setLlmLabel("");
           setLlmProfiles([]);
           setActiveProfile(null);
+          setActiveModel("");
+          setProfileModels([]);
         }
         const list = await refreshSessions(userId);
         const preferred =
@@ -356,7 +398,27 @@ function ChatPageInner() {
           setLiveThinking(String(data.payload.thinking));
         }
       }
-      if (data.type === "ChatCompleted" || data.type === "ChatCancelled") source.close();
+      if (data.type === "SessionTitle" && typeof data.payload?.title === "string") {
+        const title = String(data.payload.title);
+        setSessions((prev) =>
+          prev.map((item) =>
+            item.session_id === sessionId ? { ...item, title } : item,
+          ),
+        );
+      }
+      if (data.type === "ToolFinished") {
+        const tool = typeof data.payload?.tool === "string" ? data.payload.tool : "";
+        if (
+          ["write_file", "patch", "filesystem", "terminal", "python"].includes(tool)
+        ) {
+          void refreshWorkspace(sessionId, userId);
+        }
+      }
+      if (data.type === "ChatCompleted" || data.type === "ChatCancelled") {
+        void refreshWorkspace(sessionId, userId);
+        void refreshSessions(userId);
+        source.close();
+      }
     };
     source.onerror = () => source.close();
 
@@ -377,8 +439,7 @@ function ChatPageInner() {
       setMessages(result.messages);
       setSessionStats(result.stats);
       await refreshSessions();
-      const fl = await api.files(sessionId, userId);
-      setFiles(fl);
+      await refreshWorkspace(sessionId, userId);
       const profile = await api.me(userId);
       setMe(profile);
     } catch (err) {
@@ -446,32 +507,123 @@ function ChatPageInner() {
             </div>
           ))}
         </div>
-        <div className="shrink-0 border-t border-white/10 p-4 text-xs text-slate-400">
-          <label className="mb-1 block">User id</label>
-          <input
-            className="input-forge"
-            value={userId}
-            onChange={(e) => setUserId(e.target.value)}
-          />
-          {me && (
-            <p className="mt-2">
-              {me.name} · {me.role}
-              <br />
-              tokens {formatTokens(me.stats?.total_tokens)}
+        <div className="shrink-0 border-t border-white/10 p-3">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <p className="text-[10px] uppercase tracking-wider text-slate-500">Model</p>
+            <Link href="/profiles" className="text-[10px] text-orange-300/80 hover:text-orange-200">
+              Profiles
+            </Link>
+          </div>
+          {llmProfiles.length > 0 ? (
+            <div className="space-y-2">
+              <select
+                className="input-forge font-mono text-xs"
+                value={activeProfile || ""}
+                onChange={(e) => {
+                  const name = e.target.value;
+                  void (async () => {
+                    try {
+                      await api.activateLlmProfile(name);
+                      await loadLlmState();
+                    } catch (err) {
+                      setError(err instanceof Error ? err.message : "Failed to switch profile");
+                    }
+                  })();
+                }}
+              >
+                {llmProfiles.map((item) => (
+                  <option key={item.name} value={item.name}>
+                    {item.name} · {item.provider}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="input-forge font-mono text-xs"
+                value={activeModel}
+                disabled={!profileModels.length}
+                onChange={(e) => {
+                  const model = e.target.value;
+                  const profile = llmProfiles.find((item) => item.name === activeProfile);
+                  if (!profile) return;
+                  void (async () => {
+                    try {
+                      await api.saveLlmProfile({
+                        name: profile.name,
+                        provider: profile.provider,
+                        base_url: profile.base_url,
+                        model,
+                        activate: true,
+                      });
+                      setActiveModel(model);
+                    } catch (err) {
+                      setError(err instanceof Error ? err.message : "Failed to switch model");
+                    }
+                  })();
+                }}
+              >
+                {(profileModels.length ? profileModels : activeModel ? [activeModel] : []).map(
+                  (item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ),
+                )}
+              </select>
+            </div>
+          ) : (
+            <p className="text-[11px] text-slate-500">
+              No profile yet.{" "}
+              <Link href="/profiles" className="text-orange-300 hover:text-orange-200">
+                Set one up
+              </Link>
             </p>
+          )}
+          <div className="mt-3 flex items-center justify-between gap-2 text-[11px] text-slate-500">
+            <span className="truncate">
+              {me ? `${me.name}` : "Local"}
+              {sessionStats
+                ? ` · ${formatTokens(sessionStats.total_tokens)} tok`
+                : me?.stats?.total_tokens
+                  ? ` · ${formatTokens(me.stats.total_tokens)}`
+                  : ""}
+            </span>
+            <button
+              type="button"
+              className="text-slate-400 hover:text-slate-200"
+              onClick={() => setShowUserSettings((value) => !value)}
+              title="User settings"
+            >
+              ⚙
+            </button>
+          </div>
+          {showUserSettings && (
+            <div className="mt-2 space-y-1">
+              <label className="block text-[10px] uppercase tracking-wider text-slate-500">
+                User id
+              </label>
+              <input
+                className="input-forge font-mono text-xs"
+                value={userId}
+                onChange={(e) => setUserId(e.target.value)}
+              />
+            </div>
           )}
         </div>
       </aside>
 
       <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        <header className="flex shrink-0 items-center justify-between gap-4 border-b border-white/10 px-6 py-4">
+        <header className="flex shrink-0 items-center justify-between gap-4 border-b border-white/10 px-6 py-3">
           <div className="min-w-0 flex-1">
-            <h1 className="font-display text-xl">{activeSession?.title || "Chat"}</h1>
-            <p className="mt-1 truncate font-mono text-[11px] text-slate-500">
-              {projectRoot ? `project ${projectRoot}` : "no project open — tools use session scratch"}
-              {sandboxLabel ? ` · sandbox ${sandboxLabel}` : ""}
-              {llmLabel ? ` · llm ${llmLabel}` : ""}
-            </p>
+            <div className="flex items-center gap-3">
+              <h1 className="truncate font-display text-lg text-slate-50">
+                {activeSession?.title || "Chat"}
+              </h1>
+              {sandboxLabel && (
+                <span className="hidden shrink-0 rounded border border-white/10 px-2 py-0.5 font-mono text-[10px] text-slate-500 sm:inline">
+                  {sandboxLabel}
+                </span>
+              )}
+            </div>
             <div className="mt-2 flex max-w-3xl gap-2">
               <input
                 className="input-forge font-mono text-xs"
@@ -482,52 +634,16 @@ function ChatPageInner() {
               <button type="button" className="btn-ghost shrink-0" onClick={() => void onOpenProject()}>
                 Open
               </button>
-              {llmProfiles.length > 0 && (
-                <select
-                  className="input-forge max-w-[11rem] shrink-0 font-mono text-xs"
-                  value={activeProfile || ""}
-                  title="Active LLM profile"
-                  onChange={(e) => {
-                    const name = e.target.value;
-                    void (async () => {
-                      try {
-                        const res = await api.activateLlmProfile(name);
-                        setActiveProfile(res.active);
-                        setLlmLabel(
-                          `${res.resolved.profile || "env"} · ${res.resolved.provider}/${res.resolved.model}`,
-                        );
-                      } catch (err) {
-                        setError(err instanceof Error ? err.message : "Failed to switch profile");
-                      }
-                    })();
-                  }}
-                >
-                  {llmProfiles.map((item) => (
-                    <option key={item.name} value={item.name}>
-                      {item.name}
-                    </option>
-                  ))}
-                </select>
-              )}
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            {sessionStats && (
-              <div className="rounded-lg border border-white/10 px-3 py-2 font-mono text-xs text-slate-300">
-                in {formatTokens(sessionStats.prompt_tokens)} · out{" "}
-                {formatTokens(sessionStats.completion_tokens)} · total{" "}
-                {formatTokens(sessionStats.total_tokens)}
-              </div>
-            )}
-            <button
-              type="button"
-              className="btn-ghost hidden xl:inline-flex"
-              onClick={() => setFilesOpen((value) => !value)}
-              title={filesOpen ? "Collapse panel" : "Expand panel"}
-            >
-              {filesOpen ? "⟩ Files" : "⟨ Files"}
-            </button>
-          </div>
+          <button
+            type="button"
+            className="btn-ghost hidden h-9 w-9 shrink-0 items-center justify-center p-0 text-base xl:inline-flex"
+            onClick={() => setFilesOpen((value) => !value)}
+            title={filesOpen ? "Hide project panel" : "Show project panel"}
+          >
+            {filesOpen ? "⟩" : "⟨"}
+          </button>
         </header>
 
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-6">
@@ -671,13 +787,25 @@ function ChatPageInner() {
           <>
             <div className="flex shrink-0 items-center justify-between border-b border-white/10 p-4">
               <p className="text-sm font-medium">Project</p>
-              <button
-                type="button"
-                className="rounded px-2 py-1 text-xs text-slate-400 hover:bg-white/5"
-                onClick={() => setFilesOpen(false)}
-              >
-                ⟩
-              </button>
+              <div className="flex items-center gap-1">
+                {activeId && projectRoot && (
+                  <button
+                    type="button"
+                    className="rounded px-2 py-1 text-[11px] text-slate-400 hover:bg-white/5 hover:text-slate-200"
+                    onClick={() => void loadProjectTree(activeId, userId, projectRoot)}
+                    title="Refresh tree"
+                  >
+                    Refresh
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="rounded px-2 py-1 text-xs text-slate-400 hover:bg-white/5"
+                  onClick={() => setFilesOpen(false)}
+                >
+                  ⟩
+                </button>
+              </div>
             </div>
             <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 text-xs text-slate-300">
               {projectRoot ? (
@@ -690,8 +818,9 @@ function ChatPageInner() {
                       <button
                         key={entry.path}
                         type="button"
-                        className={`flex w-full items-center gap-2 rounded px-1.5 py-1 text-left font-mono hover:bg-white/5 ${entry.type === "dir" ? "text-slate-400" : "text-slate-200"
-                          }`}
+                        className={`flex w-full items-center gap-2 rounded px-1.5 py-1 text-left font-mono hover:bg-white/5 ${
+                          entry.type === "dir" ? "text-slate-400" : "text-slate-200"
+                        }`}
                         onClick={() => {
                           if (entry.type === "file") void onPreviewFile(entry.path);
                         }}
@@ -706,7 +835,11 @@ function ChatPageInner() {
                         </span>
                       </button>
                     ))}
-                    {!projectTree.length && <p className="text-slate-600">Empty or unreadable</p>}
+                    {!projectTree.length && (
+                      <p className="text-slate-600">
+                        No files yet — they appear here when the agent writes them.
+                      </p>
+                    )}
                   </div>
                 </div>
               ) : (

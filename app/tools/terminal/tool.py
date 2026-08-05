@@ -1,5 +1,6 @@
 import shlex
 import time
+from pathlib import Path
 
 from app.core.config import settings
 from app.runtime.sandbox import sandbox_manager
@@ -10,7 +11,10 @@ from app.tools.workspace_paths import session_workspace
 
 manifest = ToolManifest(
     name="terminal",
-    description="Run allowlisted shell commands inside the workspace sandbox.",
+    description=(
+        "Run an allowlisted shell command in the project/workspace root "
+        "(e.g. python, git, pytest, npm, ls/dir). Do not use for file edits — use write_file/patch."
+    ),
     keywords=[
         "terminal",
         "shell",
@@ -21,6 +25,17 @@ manifest = ToolManifest(
         "execute",
     ],
     permissions=["terminal.execute"],
+    parameters={
+        "type": "object",
+        "properties": {
+            "command": {
+                "type": "string",
+                "description": "Full shell command string to run (executable must be allowlisted)",
+            },
+        },
+        "required": ["command"],
+        "additionalProperties": False,
+    },
 )
 
 
@@ -29,14 +44,15 @@ class TerminalTool(BaseTool):
 
     async def execute(self, command: str) -> ToolResult:
         start = time.perf_counter()
+        workdir: Path | None = None
+        cmd = (command or "").strip()
 
         try:
-            command = command.strip()
-            if not command:
+            if not cmd:
                 raise ValueError("Command must not be empty.")
 
             try:
-                parts = shlex.split(command, posix=False)
+                parts = shlex.split(cmd, posix=False)
             except ValueError as exc:
                 raise ValueError(f"Invalid command: {exc}") from exc
 
@@ -50,40 +66,63 @@ class TerminalTool(BaseTool):
 
             if executable_name not in settings.terminal_allowlist:
                 raise PermissionError(
-                    f"Command '{executable_name}' is not allowlisted."
+                    f"Command '{executable_name}' is not allowlisted. "
+                    f"Allowed: {', '.join(sorted(settings.terminal_allowlist))}"
                 )
 
             workdir = session_workspace()
+            meta_base = {
+                "command": cmd,
+                "executable": executable_name,
+                "workdir": str(workdir),
+            }
 
             if settings.SANDBOX_FOR_TERMINAL:
                 sandbox = await sandbox_manager.execute(
-                    command,
+                    cmd,
                     workdir=workdir,
                     timeout=settings.TERMINAL_TIMEOUT_SECONDS,
                 )
+                stdout = (sandbox.stdout or "").strip()
+                stderr = (sandbox.stderr or "").strip()
+                if sandbox.success:
+                    return ToolResult(
+                        success=True,
+                        output=stdout or None,
+                        execution_time=time.perf_counter() - start,
+                        metadata={
+                            **meta_base,
+                            "returncode": sandbox.exit_code,
+                            "sandbox_id": sandbox.sandbox_id,
+                            "sandbox": sandbox.metadata,
+                        },
+                    )
+
+                error = stderr or stdout or f"Exit code {sandbox.exit_code}"
                 return ToolResult(
-                    success=sandbox.success,
-                    output=sandbox.stdout.strip() or None,
-                    error=None if sandbox.success else (sandbox.stderr.strip() or f"Exit {sandbox.exit_code}"),
+                    success=False,
+                    output=stdout or None,
+                    error=error,
                     execution_time=time.perf_counter() - start,
                     metadata={
+                        **meta_base,
                         "returncode": sandbox.exit_code,
-                        "command": command,
                         "sandbox_id": sandbox.sandbox_id,
                         "sandbox": sandbox.metadata,
+                        "stderr": stderr or None,
                     },
                 )
 
             import asyncio
 
             process = await asyncio.create_subprocess_shell(
-                command,
+                cmd,
                 cwd=str(workdir),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
             try:
-                stdout, stderr = await asyncio.wait_for(
+                stdout_b, stderr_b = await asyncio.wait_for(
                     process.communicate(),
                     timeout=settings.TERMINAL_TIMEOUT_SECONDS,
                 )
@@ -94,27 +133,34 @@ class TerminalTool(BaseTool):
                     f"Command timed out after {settings.TERMINAL_TIMEOUT_SECONDS} seconds."
                 )
 
-            output = stdout.decode(errors="replace").strip()
-            error_output = stderr.decode(errors="replace").strip()
-            if process.returncode != 0:
+            output = stdout_b.decode(errors="replace").strip()
+            error_output = stderr_b.decode(errors="replace").strip()
+            code = process.returncode if process.returncode is not None else -1
+            if code != 0:
                 return ToolResult(
                     success=False,
                     output=output or None,
-                    error=error_output or f"Exit code {process.returncode}",
+                    error=error_output or output or f"Exit code {code}",
                     execution_time=time.perf_counter() - start,
-                    metadata={"returncode": process.returncode, "command": command},
+                    metadata={**meta_base, "returncode": code, "stderr": error_output or None},
                 )
 
             return ToolResult(
                 success=True,
-                output=output,
+                output=output or None,
                 execution_time=time.perf_counter() - start,
-                metadata={"returncode": process.returncode, "command": command},
+                metadata={**meta_base, "returncode": code},
             )
 
-        except Exception as e:
+        except Exception as exc:  # noqa: BLE001
+            message = str(exc).strip() or f"{type(exc).__name__}: command failed"
             return ToolResult(
                 success=False,
-                error=str(e),
+                error=message,
                 execution_time=time.perf_counter() - start,
+                metadata={
+                    "command": cmd or None,
+                    "workdir": str(workdir) if workdir else None,
+                    "exception": type(exc).__name__,
+                },
             )

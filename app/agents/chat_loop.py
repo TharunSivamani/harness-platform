@@ -220,8 +220,20 @@ class ChatLoop:
             raise ValueError("Message content or attachments required.")
 
         if session["title"] in {"New chat", "New Chat"} and (text or resolved_attachments):
-            title = text[:48] if text else f"Image: {resolved_attachments[0]['name']}"
-            storage.touch_session(session_id, title=title)
+            provisional = (
+                text[:48]
+                if text
+                else f"Image: {resolved_attachments[0]['name']}"
+            )
+            storage.touch_session(session_id, title=provisional)
+            await self._emit(session_id, "SessionTitle", {"title": provisional})
+            # LLM summary title — do not block the tool loop.
+            asyncio.create_task(
+                self._summarize_session_title(
+                    session_id=session_id,
+                    seed=text or provisional,
+                )
+            )
 
         user_meta: dict[str, Any] = {}
         if resolved_attachments:
@@ -478,6 +490,25 @@ class ChatLoop:
             "stats": storage.session_stats(session_id),
             "messages": storage.list_messages(session_id),
         }
+
+    async def _summarize_session_title(self, *, session_id: str, seed: str) -> None:
+        """Replace the provisional title with a short LLM summary for the sidebar."""
+        try:
+            raw = await llm_router.complete(
+                prompt=(
+                    "Create a short chat sidebar title (3-7 words) for this user request. "
+                    "No quotes, no trailing punctuation, no markdown.\n\n"
+                    f"{(seed or '').strip()[:500]}"
+                ),
+                system="You name chat sessions. Reply with only the title text.",
+            )
+            title = " ".join((raw or "").strip().split())[:60]
+            if not title:
+                return
+            storage.touch_session(session_id, title=title)
+            await self._emit(session_id, "SessionTitle", {"title": title})
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Session title summary failed: %s", exc)
 
     async def _heuristic_turn(self, text: str):
         from app.llm.base import LLMResponse

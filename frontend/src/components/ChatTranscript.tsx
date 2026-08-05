@@ -57,11 +57,16 @@ function summarizeTool(message: Message): {
     payload?.metadata && typeof payload.metadata.path === "string"
       ? payload.metadata.path
       : null;
+  const command =
+    payload?.metadata && typeof payload.metadata.command === "string"
+      ? payload.metadata.command
+      : null;
 
   let summary = success ? "ok" : "failed";
   if (success && path) summary = path;
   else if (success && output) summary = output.slice(0, 80);
-  else if (!success && error) summary = error.slice(0, 100);
+  else if (!success && error) summary = error.slice(0, 120);
+  else if (!success && command) summary = `failed: ${command}`;
   else if (!success) summary = "failed";
 
   return {

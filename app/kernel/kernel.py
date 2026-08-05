@@ -14,16 +14,22 @@ from app.tools.loader import load_plugins, registry
 
 
 def normalize_tool_result(result: ToolResult, *, tool_name: str) -> ToolResult:
-    """Ensure failed results always carry a usable error string."""
+    """Ensure failed results always carry a usable error string + context."""
     if result.success:
         return result
     error = (result.error or "").strip()
-    if error:
-        return result
-    if result.output is not None and str(result.output).strip():
+    if not error and result.output is not None and str(result.output).strip():
         error = str(result.output).strip()
-    else:
-        error = f"Tool '{tool_name}' failed without an error message."
+    if not error:
+        meta = result.metadata or {}
+        command = meta.get("command") or meta.get("executable")
+        code = meta.get("returncode")
+        if command and code is not None:
+            error = f"Command failed (exit {code}): {command}"
+        elif command:
+            error = f"Command failed: {command}"
+        else:
+            error = f"Tool '{tool_name}' failed without an error message."
     return result.model_copy(update={"error": error})
 
 
