@@ -46,7 +46,7 @@ def load_plugins() -> ToolRegistry:
 
         try:
             registry.register(tool)
-            logger.info("Registered tool: %s", tool.manifest.name)
+            logger.debug("Registered tool: %s", tool.manifest.name)
         except Exception as exc:
             logger.warning(
                 "Failed to register plugin '%s': %s",
