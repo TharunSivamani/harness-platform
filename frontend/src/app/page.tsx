@@ -265,15 +265,34 @@ function ChatPageInner() {
 
   function addAttachments(fileList: FileList | null) {
     if (!fileList?.length) return;
+    const MAX_IMAGES = 2;
+    const existingImages = pending.filter((item) => item.file.type.startsWith("image/")).length;
+    let imageSlots = Math.max(0, MAX_IMAGES - existingImages);
     const next: PendingAttachment[] = [];
+    let skippedImages = 0;
+
     Array.from(fileList).forEach((file) => {
+      const isImage = file.type.startsWith("image/");
+      if (isImage) {
+        if (imageSlots <= 0) {
+          skippedImages += 1;
+          return;
+        }
+        imageSlots -= 1;
+      }
       next.push({
         id: `${file.name}-${file.size}-${Date.now()}-${Math.random()}`,
         file,
         previewUrl: URL.createObjectURL(file),
       });
     });
-    setPending((prev) => [...prev, ...next]);
+
+    if (skippedImages > 0) {
+      setError(`Max ${MAX_IMAGES} images per prompt (skipped ${skippedImages}).`);
+    } else {
+      setError("");
+    }
+    if (next.length) setPending((prev) => [...prev, ...next]);
   }
 
   function removePending(id: string) {
@@ -743,6 +762,7 @@ function ChatPageInner() {
               className="btn-ghost"
               onClick={() => fileRef.current?.click()}
               disabled={busy}
+              title="Up to 2 images per prompt"
             >
               Attach
             </button>
