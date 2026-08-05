@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import shutil
 import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from app.cli.banner import ensure_utf8_stdio, forge_mark_lines
 from app.cli.select import Choice, select_option
+from app.core.config import settings
 from app.llm.profiles import (
     fetch_models,
     profile_store,
@@ -17,8 +20,9 @@ from app.llm.profiles import (
 from app.storage.db import storage
 from app.storage.paths import paths
 
-
-# ── slash catalogue (completer + help share this) ──────────────────────────
+# Soft context-window estimate for the status bar (Claude-style used/limit).
+DEFAULT_CONTEXT_LIMIT = 128_000
+CTRL_C_EXIT_WINDOW = 2.0
 
 SLASH_COMMANDS: list[tuple[str, str]] = [
     ("/help", "Show all commands"),
@@ -45,11 +49,14 @@ class ReplState:
     session_started_at: float = field(default_factory=time.monotonic)
     session_tokens: int = 0
     last_turn_tokens: int = 0
+    last_turn_seconds: float = 0.0
     turns: int = 0
+    context_limit: int = DEFAULT_CONTEXT_LIMIT
+    ctrl_c_armed_at: float | None = None
+    generating: bool = False
 
 
 def quiet_logging() -> None:
-    """Silence plugin registration noise during interactive chat."""
     logging.getLogger("forge-ai").setLevel(logging.WARNING)
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
@@ -72,8 +79,23 @@ def accent(text: str) -> str:
     return _c(text, "38;5;208")
 
 
-def ember(text: str) -> str:
-    return _c(text, "38;5;216")
+def cyan(text: str) -> str:
+    return _c(text, "36")
+
+
+def green(text: str) -> str:
+    return _c(text, "32")
+
+
+def term_width(fallback: int = 72) -> int:
+    try:
+        return max(48, min(shutil.get_terminal_size((fallback, 20)).columns, 100))
+    except OSError:
+        return fallback
+
+
+def rule(char: str = "-") -> None:
+    print(dim(char * term_width()))
 
 
 def format_duration(seconds: float) -> str:
@@ -89,12 +111,21 @@ def format_duration(seconds: float) -> str:
 
 def format_tokens(n: int) -> str:
     if n >= 1_000_000:
-        return f"{n / 1_000_000:.1f}M"
-    if n >= 10_000:
-        return f"{n / 1_000:.1f}k"
-    if n >= 1_000:
-        return f"{n / 1_000:.2f}k".rstrip("0").rstrip(".")
+        return f"{n / 1_000_000:.2f}M"
+    if n >= 1000:
+        val = n / 1000
+        text = f"{val:.2f}".rstrip("0").rstrip(".")
+        return f"{text}k"
     return str(n)
+
+
+def token_bar(used: int, limit: int, width: int = 12) -> str:
+    if limit <= 0:
+        return f"[{'.' * width}] 0%"
+    pct = min(1.0, max(0.0, used / limit))
+    filled = int(round(width * pct))
+    body = "#" * filled + "." * (width - filled)
+    return f"[{body}] {int(pct * 100)}%"
 
 
 def refresh_token_stats(state: ReplState) -> None:
@@ -102,93 +133,114 @@ def refresh_token_stats(state: ReplState) -> None:
     state.session_tokens = int(stats.get("total_tokens") or 0)
 
 
-def status_line(state: ReplState, *, turn_tokens: int | None = None) -> str:
+def print_status_bar(state: ReplState) -> None:
+    """Claude Code–style sandwich status strip."""
     resolved = resolve_llm_config(state.profile)
-    elapsed = format_duration(time.monotonic() - state.started_at)
-    sess = format_duration(time.monotonic() - state.session_started_at)
-    turn = state.last_turn_tokens if turn_tokens is None else turn_tokens
-    bits = [
-        f"{accent('live')} {elapsed}",
-        f"chat {sess}",
-        f"turn +{format_tokens(turn)}" if turn else "turn -",
-        f"session {format_tokens(state.session_tokens)} tok",
-        f"{resolved.profile_name or 'env'}/{resolved.model or '-'}",
-    ]
-    return dim("  " + "  |  ".join(bits))
+    model = resolved.model or "-"
+    used = state.session_tokens
+    limit = state.context_limit
+    live = format_duration(time.monotonic() - state.started_at)
+    chat = format_duration(time.monotonic() - state.session_started_at)
+    last = format_duration(state.last_turn_seconds) if state.last_turn_seconds else "-"
+    bar = token_bar(used, limit)
+    rule()
+    print(
+        f"  {cyan('$' + ' ' + model)}  {dim('|')}  "
+        f"{dim(format_tokens(used) + '/' + format_tokens(limit))}  {dim('|')}  "
+        f"{green(bar)}  {dim('|')}  "
+        f"{dim('live ' + live)}  {dim('|')}  "
+        f"{dim('chat ' + chat)}  {dim('|')}  "
+        f"{dim('last ' + last)}"
+    )
+    if state.last_turn_tokens:
+        print(
+            f"  {dim('turn +' + format_tokens(state.last_turn_tokens))}  "
+            f"{dim('|')}  {dim('turns ' + str(state.turns))}  "
+            f"{dim('|')}  {dim(resolved.profile_name or 'env')}"
+        )
+    rule()
 
 
 def print_banner(state: ReplState) -> None:
+    from getpass import getuser
+
     resolved = resolve_llm_config(state.profile)
     profile = resolved.profile_name or "(env)"
     model = resolved.model or "-"
     provider = resolved.provider
     project = state.project_root
-    width = 54
-    top = "+" + ("-" * width) + "+"
+    try:
+        who = getuser()
+    except Exception:  # noqa: BLE001
+        who = "there"
+
     print()
+    for line in forge_mark_lines():
+        print(f"  {accent(line)}")
+    print()
+    w = term_width()
+    inner = w - 4
+    top = "+" + ("-" * (w - 2)) + "+"
     print(f"  {accent(top)}")
-    print(f"  {accent('|')}  ForgeAI  agent cli" + " " * (width - 20) + accent("|"))
-    print(f"  {accent('|')}  {dim('profile')}  {profile[:44]:<44}{accent('|')}")
+    title = f" ForgeAI v{settings.APP_VERSION} "
+    print(f"  {accent('|')}{accent(title)}{accent('-' * max(1, w - 3 - len(title)))}{accent('|')}")
+    print(f"  {accent('|')}{' ' * (w - 2)}{accent('|')}")
+    greeting = f"  Welcome back {who}"
+    print(f"  {accent('|')}{greeting:<{w - 2}}{accent('|')}")
+    print(f"  {accent('|')}{' ' * (w - 2)}{accent('|')}")
+    for label, value in (
+        ("profile", profile),
+        ("model", f"{provider}/{model}"),
+        ("project", project if len(project) <= inner - 10 else "..." + project[-(inner - 13) :]),
+        ("session", state.session_id[:8] + "..."),
+        ("config", str(paths.config_home())),
+    ):
+        row = f"  {label:<8} {value}"
+        print(f"  {accent('|')}{row:<{w - 2}}{accent('|')}")
+    print(f"  {accent('|')}{' ' * (w - 2)}{accent('|')}")
+    print(f"  {accent('|')}  Tips{' ' * (w - 8)}{accent('|')}")
+    for tip_cmd, tip_desc in (
+        ("/profile", "switch LLM profile"),
+        ("/model", "pick a model"),
+        ("/", "live command panel"),
+    ):
+        row = f"  {tip_cmd:<10} {tip_desc}"
+        print(f"  {accent('|')}{row:<{w - 2}}{accent('|')}")
+    print(f"  {accent('+' + ('-' * (w - 2)) + '+')}")
     print(
-        f"  {accent('|')}  {dim('model')}    "
-        f"{(provider + '/' + model)[:44]:<44}{accent('|')}"
-    )
-    short_proj = project if len(project) <= 44 else "..." + project[-41:]
-    print(f"  {accent('|')}  {dim('project')}  {short_proj:<44}{accent('|')}")
-    print(
-        f"  {accent('|')}  {dim('session')}  "
-        f"{(state.session_id[:8] + '...'):<44}{accent('|')}"
-    )
-    cfg = str(paths.config_home())
-    short_cfg = cfg if len(cfg) <= 44 else "..." + cfg[-41:]
-    print(f"  {accent('|')}  {dim('config')}   {short_cfg:<44}{accent('|')}")
-    print(f"  {accent('+' + ('-' * width) + '+')}")
-    print(
-        f"  {dim('type')} {accent('/')} "
-        f"{dim('for commands | tab complete | /ex expands to /exit')}"
+        f"  {dim('esc stops a running reply')}  {dim('|')}  "
+        f"{dim('Ctrl+C new chat')}  {dim('|')}  "
+        f"{dim('Ctrl+C twice exits')}"
     )
     print()
-    print(status_line(state))
+    print_status_bar(state)
     print()
 
 
 def print_status(state: ReplState) -> None:
     refresh_token_stats(state)
+    print_status_bar(state)
     resolved = resolve_llm_config(state.profile)
-    print()
-    print(f"  {bold('status')}")
-    print(f"  {dim('profile')}   {resolved.profile_name or '-'} ({resolved.provider})")
-    print(f"  {dim('model')}     {resolved.model}")
-    print(f"  {dim('project')}   {state.project_root}")
-    print(f"  {dim('session')}   {state.session_id}")
-    print(f"  {dim('config')}    {paths.config_home()}")
-    print(f"  {dim('live')}      {format_duration(time.monotonic() - state.started_at)}")
-    print(
-        f"  {dim('chat')}      "
-        f"{format_duration(time.monotonic() - state.session_started_at)}  "
-        f"({state.turns} turns)"
-    )
-    print(
-        f"  {dim('tokens')}    "
-        f"session {format_tokens(state.session_tokens)}  "
-        f"last turn +{format_tokens(state.last_turn_tokens)}"
-    )
+    print(f"  {dim('project')}  {state.project_root}")
+    print(f"  {dim('session')}  {state.session_id}")
+    print(f"  {dim('config')}   {paths.config_home()}")
+    print(f"  {dim('provider')} {resolved.provider}")
     print()
 
 
 def cmd_help() -> None:
     print()
-    print(f"  {bold(ember('commands'))}")
+    print(f"  {bold(accent('commands'))}")
     for cmd, desc in SLASH_COMMANDS:
-        print(f"  {accent(cmd):<22} {dim(desc)}")
+        print(f"  {cyan(cmd):<22} {dim(desc)}")
     print()
-    print(f"  {dim('tip')} start typing {accent('/')} then Tab - or keep typing to filter ({accent('/ex')} -> {accent('/exit')})")
+    print(f"  {dim('type / for a live filter panel — arrows + enter to pick')}")
     print()
 
 
 def cmd_home() -> None:
-    print(f"{dim('config')} {paths.config_home()}")
-    print(f"{dim('llm')}    {paths.llm_dir()}")
+    print(f"{dim('config')}  {paths.config_home()}")
+    print(f"{dim('llm')}     {paths.llm_dir()}")
     print(f"{dim('secrets')} {paths.llm_secrets_path()}")
 
 
@@ -283,7 +335,7 @@ def cmd_project_set(state: ReplState, path: str) -> None:
     print(f"{accent('ok')} project {root}")
 
 
-def cmd_clear(state: ReplState) -> None:
+def cmd_clear(state: ReplState, *, quiet: bool = False) -> None:
     title = Path(state.project_root).name or "CLI chat"
     session = storage.create_session(
         state.user_id,
@@ -294,9 +346,14 @@ def cmd_clear(state: ReplState) -> None:
     state.session_started_at = time.monotonic()
     state.session_tokens = 0
     state.last_turn_tokens = 0
+    state.last_turn_seconds = 0.0
     state.turns = 0
-    print(f"{accent('ok')} new session {state.session_id[:8]}...")
-    print(status_line(state))
+    if not quiet:
+        print()
+        rule()
+        print(f"  {accent('ok')} new chat  {dim(state.session_id[:8] + '...')}")
+        rule()
+        print()
 
 
 async def handle_slash(state: ReplState, line: str) -> bool:
@@ -305,13 +362,13 @@ async def handle_slash(state: ReplState, line: str) -> bool:
     cmd = parts[0].lower()
     arg = parts[1].strip() if len(parts) > 1 else ""
 
-    # Prefix resolve: /ex → /exit when unambiguous
-    if cmd.startswith("/") and cmd not in {c for c, _ in SLASH_COMMANDS}:
+    known = {c for c, _ in SLASH_COMMANDS}
+    if cmd.startswith("/") and cmd not in known:
         matches = [c for c, _ in SLASH_COMMANDS if c.startswith(cmd)]
         if len(matches) == 1:
             cmd = matches[0]
         elif len(matches) > 1:
-            print(dim(f"ambiguous: {', '.join(matches)}"))
+            print(dim(f"ambiguous: {', '.join(matches)}  (use the live / panel)"))
             return False
 
     if cmd in {"/exit", "/quit", "/q"}:
@@ -359,11 +416,13 @@ def _make_completer():
             text = document.text_before_cursor
             if not text.startswith("/"):
                 return
-            if " " in text.strip():
+            if " " in text:
                 return
-            token = text.split()[0] if text.split() else text
+            token = text
+            needle = token[1:].lower() if len(token) > 1 else ""
             for cmd, desc in SLASH_COMMANDS:
-                if cmd.startswith(token):
+                name = cmd[1:].lower()
+                if cmd.startswith(token) or (needle and name.startswith(needle)):
                     yield Completion(
                         cmd,
                         start_position=-len(token),
@@ -374,20 +433,65 @@ def _make_completer():
     return SlashCompleter()
 
 
-async def _prompt_line(session) -> str:  # noqa: ANN001
+def _make_key_bindings():
+    from prompt_toolkit.filters import has_completions
+    from prompt_toolkit.key_binding import KeyBindings
+
+    kb = KeyBindings()
+
+    @kb.add("enter", filter=has_completions)
+    def _accept_completion(event) -> None:  # noqa: ANN001
+        buff = event.current_buffer
+        state = buff.complete_state
+        if state and state.current_completion:
+            buff.apply_completion(state.current_completion)
+        buff.validate_and_handle()
+
+    @kb.add("escape", eager=True)
+    def _escape(event) -> None:  # noqa: ANN001
+        buff = event.current_buffer
+        if buff.complete_state:
+            buff.cancel_completion()
+            return
+        if buff.text:
+            buff.reset()
+            return
+        # Idle ESC: ignore (generation ESC handled separately).
+        pass
+
+    return kb
+
+
+def _poll_cancel_key() -> str | None:
+    """Non-blocking key read for ESC / Ctrl+C during generation (Windows + POSIX)."""
     try:
-        return await session.prompt_async()
-    except EOFError:
-        return "/exit"
-    except KeyboardInterrupt:
-        return ""
+        if sys.platform == "win32":
+            import msvcrt
+
+            if not msvcrt.kbhit():
+                return None
+            ch = msvcrt.getwch()
+            if ch in ("\x00", "\xe0"):
+                msvcrt.getwch()
+                return None
+            return ch
+        import select
+
+        if select.select([sys.stdin], [], [], 0)[0]:
+            return sys.stdin.read(1)
+    except Exception:  # noqa: BLE001
+        return None
+    return None
 
 
-async def _run_with_pulse(state: ReplState, coro):
-    """Show a live elapsed pulse while the agent works."""
+async def _run_with_pulse(state: ReplState, session_id: str, coro):
+    """Live pulse + ESC/Ctrl+C cancel while the agent works."""
+    from app.agents.chat_loop import chat_loop
+
     frames = ["|", "/", "-", "\\"]
     stop = asyncio.Event()
     start = time.monotonic()
+    state.generating = True
 
     async def pulse() -> None:
         i = 0
@@ -397,8 +501,9 @@ async def _run_with_pulse(state: ReplState, coro):
             sys.stdout.write(
                 f"\r  {accent(frames[i % len(frames)])} "
                 f"{dim('forging')} {elapsed}  {dim('|')}  "
-                f"{dim('session')} {live}  {dim('|')}  "
-                f"{format_tokens(state.session_tokens)} tok   "
+                f"{dim('live')} {live}  {dim('|')}  "
+                f"{format_tokens(state.session_tokens)} tok  {dim('|')}  "
+                f"{dim('esc/ctrl+c stop')}   "
             )
             sys.stdout.flush()
             i += 1
@@ -407,25 +512,50 @@ async def _run_with_pulse(state: ReplState, coro):
             except asyncio.TimeoutError:
                 pass
 
-    task = asyncio.create_task(pulse())
+    async def watch_keys() -> None:
+        while not stop.is_set():
+            key = await asyncio.to_thread(_poll_cancel_key)
+            if key in {"\x1b"}:  # ESC
+                chat_loop.request_cancel(session_id)
+                sys.stdout.write(f"\n  {dim('stopping...')}\n")
+                sys.stdout.flush()
+                return
+            if key in {"\x03"}:  # Ctrl+C
+                chat_loop.request_cancel(session_id)
+                sys.stdout.write(f"\n  {dim('stopping...')}\n")
+                sys.stdout.flush()
+                return
+            await asyncio.sleep(0.05)
+
+    pulse_task = asyncio.create_task(pulse())
+    watch_task = asyncio.create_task(watch_keys())
     try:
         return await coro
     finally:
         stop.set()
-        await task
-        sys.stdout.write("\r" + " " * 72 + "\r")
+        state.generating = False
+        for task in (pulse_task, watch_task):
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+        sys.stdout.write("\r" + " " * 80 + "\r")
         sys.stdout.flush()
+        state.last_turn_seconds = time.monotonic() - start
 
 
 async def run_repl(state: ReplState) -> None:
     from prompt_toolkit import PromptSession
     from prompt_toolkit.formatted_text import HTML
     from prompt_toolkit.history import FileHistory
+    from prompt_toolkit.shortcuts import CompleteStyle
     from prompt_toolkit.styles import Style
 
     from app.agents.chat_loop import chat_loop
 
     quiet_logging()
+    ensure_utf8_stdio()
     if state.profile:
         set_profile_override(state.profile)
     else:
@@ -441,38 +571,64 @@ async def run_repl(state: ReplState) -> None:
     pt_style = Style.from_dict(
         {
             "prompt": "#ffaf5f bold",
-            "bottom-toolbar": "#808080",
+            "bottom-toolbar": "noreverse #a8b2c0",
+            "completion-menu": "bg:#1a1f27 #d6dde8",
+            "completion-menu.completion": "bg:#1a1f27 #d6dde8",
+            "completion-menu.completion.current": "bg:#4a3728 #ffffff",
+            "completion-menu.meta.completion": "bg:#1a1f27 #808080",
+            "completion-menu.meta.completion.current": "bg:#4a3728 #ffd7a0",
         }
     )
 
     def bottom_toolbar():
         resolved = resolve_llm_config(state.profile)
         live = format_duration(time.monotonic() - state.started_at)
+        chat = format_duration(time.monotonic() - state.session_started_at)
+        used = format_tokens(state.session_tokens)
+        limit = format_tokens(state.context_limit)
+        model = resolved.model or "-"
         return HTML(
-            f"<b>{live}</b> | "
-            f"session {format_tokens(state.session_tokens)} tok | "
-            f"{resolved.profile_name or 'env'}/{resolved.model or '-'} | "
-            f"/help"
+            f"<b>$ {model}</b> | {used}/{limit} | "
+            f"live {live} | chat {chat} | "
+            f"/ for commands | esc stop | ctrl+c new chat"
         )
 
     session = PromptSession(
-        HTML("<prompt>forge</prompt><prompt> > </prompt>"),
+        HTML("<prompt>></prompt> "),
         history=history,
         completer=_make_completer(),
         complete_while_typing=True,
+        complete_style=CompleteStyle.COLUMN,
         bottom_toolbar=bottom_toolbar,
         style=pt_style,
         enable_history_search=True,
+        key_bindings=_make_key_bindings(),
+        refresh_interval=0.5,
     )
 
     while True:
         try:
-            text = (await _prompt_line(session)).strip()
-        except (EOFError, KeyboardInterrupt):
+            text = (await session.prompt_async()).strip()
+            state.ctrl_c_armed_at = None
+        except EOFError:
             print()
             break
+        except KeyboardInterrupt:
+            now = time.monotonic()
+            armed = state.ctrl_c_armed_at
+            if armed is not None and (now - armed) <= CTRL_C_EXIT_WINDOW:
+                print()
+                print(dim("  exit"))
+                break
+            state.ctrl_c_armed_at = now
+            cmd_clear(state)
+            print(dim("  Ctrl+C again within 2s to exit"))
+            print()
+            continue
+
         if not text:
             continue
+
         if text.startswith("/"):
             if await handle_slash(state, text):
                 elapsed = format_duration(time.monotonic() - state.started_at)
@@ -480,21 +636,39 @@ async def run_repl(state: ReplState) -> None:
                 break
             continue
 
+        # User message separator
+        print()
+        rule()
+        print(f"  {dim('you')}")
+        print(f"  {text}")
+        rule()
+        print()
+
         before = state.session_tokens
         try:
             result = await _run_with_pulse(
                 state,
+                state.session_id,
                 chat_loop.run(
                     user_id=state.user_id,
                     session_id=state.session_id,
                     content=text,
                 ),
             )
+        except KeyboardInterrupt:
+            chat_loop.request_cancel(state.session_id)
+            print(f"\n  {dim('stopped')}")
+            print_status_bar(state)
+            print()
+            continue
         except Exception as exc:  # noqa: BLE001
             print(f"{_c('error', '31')} {exc}")
+            print_status_bar(state)
+            print()
             continue
 
         content = (result.get("content") or "").strip() or dim("(empty response)")
+        cancelled = bool(result.get("cancelled"))
         stats = result.get("stats") or {}
         after = int(stats.get("total_tokens") or 0)
         state.last_turn_tokens = max(0, after - before)
@@ -502,7 +676,10 @@ async def run_repl(state: ReplState) -> None:
         state.turns += 1
 
         print()
+        rule()
+        print(f"  {accent('forge')}" + (f"  {dim('(stopped)')}" if cancelled else ""))
+        print()
         print(content)
         print()
-        print(status_line(state))
+        print_status_bar(state)
         print()
