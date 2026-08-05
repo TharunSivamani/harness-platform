@@ -222,5 +222,7 @@ workspace/*
 !workspace/README.md
 /artifacts/
 /data/
+data/llm/secrets.json
+**/.forgeai/llm/secrets.json
 forgeai.db
 *.db

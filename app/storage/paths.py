@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -10,12 +11,10 @@ from app.core.config import settings
 
 class ForgePaths:
     """
-    Portable FORGE_HOME layout.
+    Portable layout:
 
-    data/
-      forge.db
-      users/<user_id>/profile.json
-      users/<user_id>/sessions/<session_id>/...
+    FORGE_HOME (default ./data) — sessions, db, project-local runtime
+    ~/.forgeai (FORGEAI_CONFIG) — durable LLM profiles + secrets (venv-safe)
     """
 
     def __init__(self, root: Path | None = None):
@@ -23,10 +22,51 @@ class ForgePaths:
         self.root.mkdir(parents=True, exist_ok=True)
         (self.root / "users").mkdir(exist_ok=True)
         (self.root / "export").mkdir(exist_ok=True)
+        self._ensure_config_home()
+        self._migrate_llm_from_forge_home()
+
+    def _ensure_config_home(self) -> None:
+        home = settings.forgeai_config_home
+        (home / "llm").mkdir(parents=True, exist_ok=True)
+
+    def _migrate_llm_from_forge_home(self) -> None:
+        """One-shot: copy legacy data/llm/* into ~/.forgeai/llm if needed."""
+        legacy = self.root / "llm"
+        if not legacy.is_dir():
+            return
+        dest = self.llm_dir()
+        for name in ("profiles.json", "secrets.json", "active.json"):
+            src = legacy / name
+            target = dest / name
+            if src.exists() and not target.exists():
+                shutil.copy2(src, target)
 
     @property
     def db_path(self) -> Path:
         return self.root / "forge.db"
+
+    def config_home(self) -> Path:
+        return settings.forgeai_config_home
+
+    def llm_dir(self) -> Path:
+        path = self.config_home() / "llm"
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def llm_profiles_path(self) -> Path:
+        return self.llm_dir() / "profiles.json"
+
+    def llm_secrets_path(self) -> Path:
+        """API keys only — never write these into profiles.json (Hermes-style split)."""
+        return self.llm_dir() / "secrets.json"
+
+    def llm_active_path(self) -> Path:
+        return self.llm_dir() / "active.json"
+
+    def cli_history_path(self) -> Path:
+        path = self.config_home() / "history"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        return path
 
     def user_dir(self, user_id: str) -> Path:
         path = self.root / "users" / user_id

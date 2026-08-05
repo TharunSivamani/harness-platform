@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     PORT: int = 8000
 
     FORGE_HOME: str = "./data"
+    # Durable user config (profiles, secrets) — survives venv wipes. Like ~/.claude.
+    FORGEAI_CONFIG: str | None = None
     DEFAULT_USER_ID: str = "local"
     DEFAULT_USER_NAME: str = "Local User"
     DEFAULT_ROLE: str = "owner"
@@ -62,6 +64,21 @@ class Settings(BaseSettings):
     @property
     def forge_home(self) -> Path:
         path = Path(self.FORGE_HOME).resolve()
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    @property
+    def forgeai_config_home(self) -> Path:
+        """
+        User-level ForgeAI home (Claude/Hermes-style).
+
+        Default: ~/.forgeai  (Windows: %USERPROFILE%\\.forgeai)
+        Override: FORGEAI_CONFIG env / settings.
+        """
+        if self.FORGEAI_CONFIG:
+            path = Path(self.FORGEAI_CONFIG).expanduser().resolve()
+        else:
+            path = Path.home() / ".forgeai"
         path.mkdir(parents=True, exist_ok=True)
         return path
 
