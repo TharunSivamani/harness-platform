@@ -24,6 +24,8 @@ SLASH_COMMANDS: list[tuple[str, str]] = [
     ("/help", "Show all commands"),
     ("/status", "Profile, model, timer, tokens"),
     ("/profile", "Switch LLM profile (picker)"),
+    ("/provider", "Alias for /profile"),
+    ("/switch", "Alias for /profile"),
     ("/model", "Switch model (picker + filter)"),
     ("/project", "Show or set project root"),
     ("/clear", "Fresh chat session (keep profile)"),
@@ -190,11 +192,11 @@ def cmd_home() -> None:
     print(f"{dim('secrets')} {paths.llm_secrets_path()}")
 
 
-def cmd_profile_use(state: ReplState, name: str) -> None:
+async def cmd_profile_use(state: ReplState, name: str) -> None:
     name = name.strip()
     if not profile_store.get_profile(name):
         print(f"Profile not found: {name}")
-        cmd_profile_pick(state)
+        await cmd_profile_pick(state)
         return
     profile_store.set_active(name)
     set_profile_override(name)
@@ -206,7 +208,7 @@ def cmd_profile_use(state: ReplState, name: str) -> None:
     )
 
 
-def cmd_profile_pick(state: ReplState) -> None:
+async def cmd_profile_pick(state: ReplState) -> None:
     items = profile_store.list_profiles()
     if not items:
         print(dim("No profiles. Run: forgeai setup"))
@@ -220,11 +222,11 @@ def cmd_profile_pick(state: ReplState) -> None:
         )
         for p in items
     ]
-    picked = select_option("Select profile", choices, current=active)
+    picked = await select_option("Select profile", choices, current=active)
     if picked is None:
         print(dim("cancelled"))
         return
-    cmd_profile_use(state, picked)
+    await cmd_profile_use(state, picked)
 
 
 async def cmd_model_use(state: ReplState, model: str) -> None:
@@ -256,7 +258,7 @@ async def cmd_model_pick(state: ReplState) -> None:
         print(dim("No models returned from provider (check base URL / API key)."))
         return
     choices = [Choice(value=m, label=m) for m in models]
-    picked = select_option(
+    picked = await select_option(
         f"Select model  ({profile.name})",
         choices,
         current=resolved.model,
@@ -323,11 +325,11 @@ async def handle_slash(state: ReplState, line: str) -> bool:
     if cmd == "/home":
         cmd_home()
         return False
-    if cmd == "/profile":
+    if cmd in {"/profile", "/provider", "/switch"}:
         if arg:
-            cmd_profile_use(state, arg)
+            await cmd_profile_use(state, arg)
         else:
-            cmd_profile_pick(state)
+            await cmd_profile_pick(state)
         return False
     if cmd == "/model":
         if arg:

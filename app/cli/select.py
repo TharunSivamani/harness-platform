@@ -2,6 +2,8 @@
 
 ↑↓ navigate · type to filter · enter confirm · esc cancel
 Falls back to a numbered prompt when stdin is not a TTY.
+
+Works inside an already-running asyncio loop (forgeai chat REPL).
 """
 
 from __future__ import annotations
@@ -61,29 +63,18 @@ def _fallback_select(
     return None
 
 
-def select_option(
+def _build_app(
     title: str,
     choices: Sequence[Choice],
     *,
     current: str | None = None,
-) -> str | None:
-    """
-    Inline interactive select. Returns chosen value, or None if cancelled.
-    """
-    if not choices:
-        return None
-    if not sys.stdin.isatty() or not sys.stdout.isatty():
-        return _fallback_select(title, choices, current=current)
-
-    try:
-        from prompt_toolkit.application import Application
-        from prompt_toolkit.key_binding import KeyBindings
-        from prompt_toolkit.layout import Layout
-        from prompt_toolkit.layout.containers import HSplit, Window
-        from prompt_toolkit.layout.controls import FormattedTextControl
-        from prompt_toolkit.styles import Style
-    except ImportError:
-        return _fallback_select(title, choices, current=current)
+):
+    from prompt_toolkit.application import Application
+    from prompt_toolkit.key_binding import KeyBindings
+    from prompt_toolkit.layout import Layout
+    from prompt_toolkit.layout.containers import HSplit, Window
+    from prompt_toolkit.layout.controls import FormattedTextControl
+    from prompt_toolkit.styles import Style
 
     state = {
         "index": 0,
@@ -118,7 +109,6 @@ def select_option(
         if not rows:
             out.append(("class:dim", "  (no matches)\n"))
         else:
-            # Window around cursor so long model lists stay usable.
             window = 12
             start = max(0, state["index"] - window // 2)
             end = min(len(rows), start + window)
@@ -212,7 +202,29 @@ def select_option(
         full_screen=False,
         mouse_support=False,
     )
-    app.run()
+    return app, state
+
+
+async def select_option(
+    title: str,
+    choices: Sequence[Choice],
+    *,
+    current: str | None = None,
+) -> str | None:
+    """
+    Inline interactive select. Safe to await inside forgeai chat's asyncio loop.
+    """
+    if not choices:
+        return None
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        return _fallback_select(title, choices, current=current)
+
+    try:
+        app, state = _build_app(title, choices, current=current)
+    except ImportError:
+        return _fallback_select(title, choices, current=current)
+
+    await app.run_async()
     if state["cancelled"]:
         return None
     return state["result"]
