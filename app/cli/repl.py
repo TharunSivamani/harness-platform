@@ -8,7 +8,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from app.cli.banner import ensure_utf8_stdio, forge_mark_lines
+from app.cli.banner import ensure_utf8_stdio, print_welcome_panel, thin_rule
 from app.cli.select import Choice, select_option
 from app.core.config import settings
 from app.llm.profiles import (
@@ -94,8 +94,8 @@ def term_width(fallback: int = 72) -> int:
         return fallback
 
 
-def rule(char: str = "-") -> None:
-    print(dim(char * term_width()))
+def rule() -> None:
+    thin_rule()
 
 
 def format_duration(seconds: float) -> str:
@@ -134,7 +134,7 @@ def refresh_token_stats(state: ReplState) -> None:
 
 
 def print_status_bar(state: ReplState) -> None:
-    """Claude Code–style sandwich status strip."""
+    """Compact Claude-like strip (no heavy dashed sandwich)."""
     resolved = resolve_llm_config(state.profile)
     model = resolved.model or "-"
     used = state.session_tokens
@@ -143,12 +143,11 @@ def print_status_bar(state: ReplState) -> None:
     chat = format_duration(time.monotonic() - state.session_started_at)
     last = format_duration(state.last_turn_seconds) if state.last_turn_seconds else "-"
     bar = token_bar(used, limit)
-    rule()
     print(
         f"  {cyan('$' + ' ' + model)}  {dim('|')}  "
         f"{dim(format_tokens(used) + '/' + format_tokens(limit))}  {dim('|')}  "
         f"{green(bar)}  {dim('|')}  "
-        f"{dim('live ' + live)}  {dim('|')}  "
+        f"{dim(live)}  {dim('|')}  "
         f"{dim('chat ' + chat)}  {dim('|')}  "
         f"{dim('last ' + last)}"
     )
@@ -158,67 +157,24 @@ def print_status_bar(state: ReplState) -> None:
             f"{dim('|')}  {dim('turns ' + str(state.turns))}  "
             f"{dim('|')}  {dim(resolved.profile_name or 'env')}"
         )
-    rule()
 
 
 def print_banner(state: ReplState) -> None:
-    from getpass import getuser
-
     resolved = resolve_llm_config(state.profile)
-    profile = resolved.profile_name or "(env)"
-    model = resolved.model or "-"
-    provider = resolved.provider
-    project = state.project_root
-    try:
-        who = getuser()
-    except Exception:  # noqa: BLE001
-        who = "there"
-
-    print()
-    for line in forge_mark_lines():
-        print(f"  {accent(line)}")
-    print()
-    w = term_width()
-    inner = w - 4
-    top = "+" + ("-" * (w - 2)) + "+"
-    print(f"  {accent(top)}")
-    title = f" ForgeAI v{settings.APP_VERSION} "
-    print(f"  {accent('|')}{accent(title)}{accent('-' * max(1, w - 3 - len(title)))}{accent('|')}")
-    print(f"  {accent('|')}{' ' * (w - 2)}{accent('|')}")
-    greeting = f"  Welcome back {who}"
-    print(f"  {accent('|')}{greeting:<{w - 2}}{accent('|')}")
-    print(f"  {accent('|')}{' ' * (w - 2)}{accent('|')}")
-    for label, value in (
-        ("profile", profile),
-        ("model", f"{provider}/{model}"),
-        ("project", project if len(project) <= inner - 10 else "..." + project[-(inner - 13) :]),
-        ("session", state.session_id[:8] + "..."),
-        ("config", str(paths.config_home())),
-    ):
-        row = f"  {label:<8} {value}"
-        print(f"  {accent('|')}{row:<{w - 2}}{accent('|')}")
-    print(f"  {accent('|')}{' ' * (w - 2)}{accent('|')}")
-    print(f"  {accent('|')}  Tips{' ' * (w - 8)}{accent('|')}")
-    for tip_cmd, tip_desc in (
-        ("/profile", "switch LLM profile"),
-        ("/model", "pick a model"),
-        ("/", "live command panel"),
-    ):
-        row = f"  {tip_cmd:<10} {tip_desc}"
-        print(f"  {accent('|')}{row:<{w - 2}}{accent('|')}")
-    print(f"  {accent('+' + ('-' * (w - 2)) + '+')}")
-    print(
-        f"  {dim('esc stops a running reply')}  {dim('|')}  "
-        f"{dim('Ctrl+C new chat')}  {dim('|')}  "
-        f"{dim('Ctrl+C twice exits')}"
+    print_welcome_panel(
+        profile=resolved.profile_name or "(env)",
+        provider=resolved.provider,
+        model=resolved.model or "-",
+        project=state.project_root,
+        version=settings.APP_VERSION,
     )
-    print()
     print_status_bar(state)
     print()
 
 
 def print_status(state: ReplState) -> None:
     refresh_token_stats(state)
+    print()
     print_status_bar(state)
     resolved = resolve_llm_config(state.profile)
     print(f"  {dim('project')}  {state.project_root}")
@@ -350,9 +306,7 @@ def cmd_clear(state: ReplState, *, quiet: bool = False) -> None:
     state.turns = 0
     if not quiet:
         print()
-        rule()
         print(f"  {accent('ok')} new chat  {dim(state.session_id[:8] + '...')}")
-        rule()
         print()
 
 
@@ -636,11 +590,8 @@ async def run_repl(state: ReplState) -> None:
                 break
             continue
 
-        # User message separator
+        # Claude-like: don't re-box the prompt; just a thin turn divider.
         print()
-        rule()
-        print(f"  {dim('you')}")
-        print(f"  {text}")
         rule()
         print()
 
@@ -658,11 +609,13 @@ async def run_repl(state: ReplState) -> None:
         except KeyboardInterrupt:
             chat_loop.request_cancel(state.session_id)
             print(f"\n  {dim('stopped')}")
+            print()
             print_status_bar(state)
             print()
             continue
         except Exception as exc:  # noqa: BLE001
             print(f"{_c('error', '31')} {exc}")
+            print()
             print_status_bar(state)
             print()
             continue
@@ -676,10 +629,10 @@ async def run_repl(state: ReplState) -> None:
         state.turns += 1
 
         print()
-        rule()
-        print(f"  {accent('forge')}" + (f"  {dim('(stopped)')}" if cancelled else ""))
-        print()
+        if cancelled:
+            print(f"  {dim('(stopped)')}")
         print(content)
         print()
+        rule()
         print_status_bar(state)
         print()
