@@ -2,10 +2,22 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { UserArtifact, api } from "@/lib/api";
+import { UserArtifact, API_URL, api } from "@/lib/api";
 import { formatBytes } from "@/lib/format";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 const IMAGE_EXT = /\.(png|jpe?g|gif|webp|bmp|tiff?)$/i;
+
+function artifactHref(item: UserArtifact): string {
+  if (item.retained || item.url.startsWith("/retained-artifacts/")) {
+    return `${API_URL}${item.url}`;
+  }
+  return api.fileUrl(
+    item.session_id,
+    item.kind as "upload" | "artifact" | "workspace",
+    item.name,
+  );
+}
 
 export default function ArtifactsPage() {
   const [userId, setUserId] = useState("local");
@@ -13,6 +25,7 @@ export default function ArtifactsPage() {
   const [filter, setFilter] = useState<"all" | "upload" | "artifact" | "workspace">("all");
   const [error, setError] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<UserArtifact | null>(null);
 
   async function refresh(uid = userId) {
     try {
@@ -33,14 +46,9 @@ export default function ArtifactsPage() {
     [artifacts, filter],
   );
 
-  async function onDelete(item: UserArtifact) {
-    if (
-      !window.confirm(
-        `Delete ${item.name} from this session?\n\nChat text stays as memory. The model will no longer receive this file on later turns.`,
-      )
-    ) {
-      return;
-    }
+  async function confirmDelete() {
+    if (!pendingDelete) return;
+    const item = pendingDelete;
     const key = `${item.session_id}:${item.kind}:${item.name}`;
     setBusyId(key);
     try {
@@ -49,7 +57,9 @@ export default function ArtifactsPage() {
         item.kind as "upload" | "artifact" | "workspace",
         item.name,
         userId,
+        Boolean(item.retained),
       );
+      setPendingDelete(null);
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Delete failed");
@@ -76,8 +86,8 @@ export default function ArtifactsPage() {
             onChange={(e) => setUserId(e.target.value)}
           />
           <p className="pt-2 text-slate-500">
-            Deleting a file removes it from disk. Prior chat messages remain so conversation memory
-            continues; missing attachments are marked and skipped on future model turns.
+            Clearing chats keeps artifacts here. Uploads and workspace files are removed with their
+            chat.
           </p>
         </div>
       </aside>
@@ -106,8 +116,10 @@ export default function ArtifactsPage() {
         <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
           <div className="mx-auto grid max-w-5xl gap-3">
             {visible.map((item) => {
-              const key = `${item.session_id}:${item.kind}:${item.name}`;
-              const isImage = item.kind === "upload" && IMAGE_EXT.test(item.name);
+              const key = `${item.session_id}:${item.kind}:${item.name}:${item.retained ? "r" : "s"}`;
+              const isImage =
+                (item.kind === "upload" || item.kind === "artifact") && IMAGE_EXT.test(item.name);
+              const href = artifactHref(item);
               return (
                 <div
                   key={key}
@@ -116,7 +128,7 @@ export default function ArtifactsPage() {
                   {isImage ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
-                      src={api.fileUrl(item.session_id, "upload", item.name)}
+                      src={href}
                       alt={item.name}
                       className="h-16 w-16 rounded-lg object-cover"
                     />
@@ -129,32 +141,23 @@ export default function ArtifactsPage() {
                     <p className="truncate font-medium">{item.name}</p>
                     <p className="mt-1 font-mono text-[11px] text-slate-500">
                       {item.session_title} · {formatBytes(item.size)} · {item.kind}
+                      {item.retained ? " · retained" : ""}
                     </p>
                   </div>
                   <div className="flex gap-2">
-                    <Link
-                      href={`/?session=${item.session_id}`}
-                      className="btn-ghost"
-                    >
-                      Open chat
-                    </Link>
-                    <a
-                      className="btn-ghost"
-                      href={api.fileUrl(
-                        item.session_id,
-                        item.kind as "upload" | "artifact" | "workspace",
-                        item.name,
-                      )}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
+                    {!item.retained && (
+                      <Link href={`/?session=${item.session_id}`} className="btn-ghost">
+                        Open chat
+                      </Link>
+                    )}
+                    <a className="btn-ghost" href={href} target="_blank" rel="noreferrer">
                       Download
                     </a>
                     <button
                       type="button"
                       className="btn-ghost text-red-200 hover:border-red-400/40"
                       disabled={busyId === key}
-                      onClick={() => void onDelete(item)}
+                      onClick={() => setPendingDelete(item)}
                     >
                       {busyId === key ? "…" : "Delete"}
                     </button>
@@ -169,6 +172,25 @@ export default function ArtifactsPage() {
           </div>
         </div>
       </main>
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        title="Delete this file?"
+        description={
+          pendingDelete
+            ? `“${pendingDelete.name}” will be removed from disk.${pendingDelete.retained
+              ? ""
+              : " Chat text stays as memory; the model will no longer receive this file on later turns."
+            }`
+            : ""
+        }
+        confirmLabel="Delete file"
+        busy={busyId !== null}
+        onCancel={() => {
+          if (!busyId) setPendingDelete(null);
+        }}
+        onConfirm={() => void confirmDelete()}
+      />
     </div>
   );
 }

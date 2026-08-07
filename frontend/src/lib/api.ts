@@ -42,6 +42,9 @@ export type Message = {
   metadata?: {
     thinking?: string;
     attachments?: MessageAttachment[];
+    model?: string;
+    provider?: string;
+    profile?: string;
     [key: string]: unknown;
   };
   created_at: string;
@@ -72,6 +75,7 @@ export type UserArtifact = {
   size: number;
   modified_at: string;
   url: string;
+  retained?: boolean;
 };
 
 export const api = {
@@ -95,9 +99,19 @@ export const api = {
       },
       userId,
     ),
-  deleteSession: (sessionId: string, userId?: string) =>
-    request<{ deleted: boolean; session_id: string }>(
-      `/sessions/${sessionId}`,
+  deleteSession: (sessionId: string, userId?: string, keepArtifacts = true) =>
+    request<{ deleted: boolean; session_id: string; keep_artifacts?: boolean }>(
+      `/sessions/${sessionId}?keep_artifacts=${keepArtifacts ? "true" : "false"}`,
+      { method: "DELETE" },
+      userId,
+    ),
+  deleteAllSessions: (userId?: string, keepArtifacts = true) =>
+    request<{
+      deleted: number;
+      keep_artifacts: boolean;
+      artifacts_retained: number;
+    }>(
+      `/sessions?keep_artifacts=${keepArtifacts ? "true" : "false"}`,
       { method: "DELETE" },
       userId,
     ),
@@ -130,6 +144,12 @@ export const api = {
       effective: string;
       docker_available: boolean;
     }>("/sandbox/status", undefined, userId),
+  browseFolder: (userId?: string) =>
+    request<{ cancelled: boolean; path: string | null }>(
+      "/system/browse-folder",
+      { method: "POST" },
+      userId,
+    ),
   messages: (sessionId: string, userId?: string) =>
     request<{ messages: Message[] }>(
       `/sessions/${sessionId}/messages`,
@@ -185,17 +205,29 @@ export const api = {
     kind: "upload" | "artifact" | "workspace",
     filename: string,
     userId?: string,
+    retained = false,
   ) =>
-    request<{
-      session_id: string;
-      kind: string;
-      name: string;
-      messages_updated: number;
-    }>(
-      `/sessions/${sessionId}/files/${kind}/${encodeURIComponent(filename)}`,
-      { method: "DELETE" },
-      userId,
-    ),
+    retained
+      ? request<{
+          session_id: string;
+          kind: string;
+          name: string;
+          retained?: boolean;
+        }>(
+          `/retained-artifacts/${sessionId}/${encodeURIComponent(filename)}`,
+          { method: "DELETE" },
+          userId,
+        )
+      : request<{
+          session_id: string;
+          kind: string;
+          name: string;
+          messages_updated: number;
+        }>(
+          `/sessions/${sessionId}/files/${kind}/${encodeURIComponent(filename)}`,
+          { method: "DELETE" },
+          userId,
+        ),
   upload: async (
     sessionId: string,
     file: File,

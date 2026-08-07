@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Message, ProjectTreeEntry, Session, api } from "@/lib/api";
 import { formatBytes, formatTokens } from "@/lib/format";
 import { ChatTranscript, ThinkingBlock } from "@/components/ChatTranscript";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { CopyButton, MarkdownBody } from "@/components/MarkdownBody";
 
 type PendingAttachment = {
@@ -13,6 +14,11 @@ type PendingAttachment = {
   file: File;
   previewUrl: string;
 };
+
+type ConfirmState =
+  | { kind: "delete-chat"; sessionId: string; title: string }
+  | { kind: "clear-all" }
+  | null;
 
 function ChatPageInner() {
   const router = useRouter();
@@ -46,6 +52,8 @@ function ChatPageInner() {
   const [activeModel, setActiveModel] = useState("");
   const [profileModels, setProfileModels] = useState<string[]>([]);
   const [showUserSettings, setShowUserSettings] = useState(false);
+  const [confirm, setConfirm] = useState<ConfirmState>(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
   const [files, setFiles] = useState<{
     uploads: Array<{ name: string; size: number }>;
     artifacts: Array<{ name: string; size: number }>;
@@ -211,7 +219,7 @@ function ChatPageInner() {
   async function onOpenProject() {
     const path = projectPathInput.trim();
     if (!path) {
-      setError("Enter a folder path on this machine");
+      setError("Choose a project folder first");
       return;
     }
     setError("");
@@ -235,6 +243,57 @@ function ChatPageInner() {
     }
   }
 
+  async function onBrowseProject() {
+    setError("");
+    try {
+      const result = await api.browseFolder(userId);
+      if (result.cancelled || !result.path) return;
+      setProjectPathInput(result.path);
+      let sessionId = activeId;
+      if (!sessionId) {
+        const created = await api.createSession(
+          result.path.split(/[/\\]/).filter(Boolean).pop() || "Project",
+          userId,
+          result.path,
+        );
+        sessionId = created.session_id;
+      } else {
+        await api.setProject(sessionId, result.path, userId);
+      }
+      await refreshSessions();
+      await loadSession(sessionId);
+      setFilesOpen(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Folder picker failed");
+    }
+  }
+
+  async function onSwitchProfile(name: string) {
+    try {
+      await api.activateLlmProfile(name);
+      await loadLlmState();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to switch profile");
+    }
+  }
+
+  async function onSwitchModel(model: string) {
+    const profile = llmProfiles.find((item) => item.name === activeProfile);
+    if (!profile) return;
+    try {
+      await api.saveLlmProfile({
+        name: profile.name,
+        provider: profile.provider,
+        base_url: profile.base_url,
+        model,
+        activate: true,
+      });
+      setActiveModel(model);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to switch model");
+    }
+  }
+
   async function onPreviewFile(path: string) {
     if (!activeId) return;
     try {
@@ -246,20 +305,62 @@ function ChatPageInner() {
     }
   }
 
-  async function onDeleteChat(sessionId: string) {
-    if (!window.confirm("Delete this chat and its files?")) return;
-    await api.deleteSession(sessionId, userId);
+  async function resetActiveChatView() {
+    setActiveId(null);
+    setMessages([]);
+    setFiles(null);
+    setSessionStats(null);
+    setProjectRoot(null);
+    setProjectPathInput("");
+    setProjectTree([]);
+    setPreviewPath(null);
+    setPreviewContent(null);
+    setLiveThinking("");
+    setLiveContent("");
+    setStreamingStarted(false);
+    router.replace("/", { scroll: false });
+  }
+
+  async function performDeleteChat(sessionId: string) {
+    await api.deleteSession(sessionId, userId, true);
     const list = await refreshSessions();
     if (activeId === sessionId) {
       if (list[0]) {
         await loadSession(list[0].session_id);
       } else {
-        setActiveId(null);
-        setMessages([]);
-        setFiles(null);
-        setSessionStats(null);
-        router.replace("/", { scroll: false });
+        await resetActiveChatView();
       }
+    }
+  }
+
+  async function performClearAllChats() {
+    if (busy) {
+      await onStop();
+    }
+    await api.deleteAllSessions(userId, true);
+    await refreshSessions();
+    await resetActiveChatView();
+    setPending((prev) => {
+      prev.forEach((item) => URL.revokeObjectURL(item.previewUrl));
+      return [];
+    });
+  }
+
+  async function onConfirmAction() {
+    if (!confirm) return;
+    setConfirmBusy(true);
+    setError("");
+    try {
+      if (confirm.kind === "delete-chat") {
+        await performDeleteChat(confirm.sessionId);
+      } else {
+        await performClearAllChats();
+      }
+      setConfirm(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Action failed");
+    } finally {
+      setConfirmBusy(false);
     }
   }
 
@@ -494,12 +595,6 @@ function ChatPageInner() {
           <button type="button" className="btn-forge mt-4 w-full" onClick={() => void onNewChat()}>
             New chat
           </button>
-          <Link href="/profiles" className="btn-ghost mt-2 flex w-full">
-            LLM profiles
-          </Link>
-          <Link href="/artifacts" className="btn-ghost mt-2 flex w-full">
-            Artifacts
-          </Link>
         </div>
         <div className="min-h-0 flex-1 space-y-1 overflow-y-auto p-2">
           {sessions.map((session) => (
@@ -519,7 +614,13 @@ function ChatPageInner() {
                 type="button"
                 title="Delete chat"
                 className="mr-1 rounded px-2 py-1 text-xs text-slate-500 opacity-0 transition group-hover:opacity-100 hover:bg-red-500/20 hover:text-red-200"
-                onClick={() => void onDeleteChat(session.session_id)}
+                onClick={() =>
+                  setConfirm({
+                    kind: "delete-chat",
+                    sessionId: session.session_id,
+                    title: session.title,
+                  })
+                }
               >
                 ×
               </button>
@@ -527,76 +628,23 @@ function ChatPageInner() {
           ))}
         </div>
         <div className="shrink-0 border-t border-white/10 p-3">
-          <div className="mb-2 flex items-center justify-between gap-2">
-            <p className="text-[10px] uppercase tracking-wider text-slate-500">Model</p>
-            <Link href="/profiles" className="text-[10px] text-orange-300/80 hover:text-orange-200">
-              Profiles
+          <p className="mb-2 text-[10px] uppercase tracking-wider text-slate-500">Workspace</p>
+          <div className="space-y-2">
+            <Link href="/profiles" className="btn-ghost flex w-full">
+              LLM profiles
             </Link>
+            <Link href="/artifacts" className="btn-ghost flex w-full">
+              Artifacts
+            </Link>
+            <button
+              type="button"
+              className="btn-ghost w-full text-red-200/90 hover:border-red-400/40 hover:bg-red-500/10 hover:text-red-100"
+              disabled={!sessions.length}
+              onClick={() => setConfirm({ kind: "clear-all" })}
+            >
+              Clear all chats
+            </button>
           </div>
-          {llmProfiles.length > 0 ? (
-            <div className="space-y-2">
-              <select
-                className="input-forge font-mono text-xs"
-                value={activeProfile || ""}
-                onChange={(e) => {
-                  const name = e.target.value;
-                  void (async () => {
-                    try {
-                      await api.activateLlmProfile(name);
-                      await loadLlmState();
-                    } catch (err) {
-                      setError(err instanceof Error ? err.message : "Failed to switch profile");
-                    }
-                  })();
-                }}
-              >
-                {llmProfiles.map((item) => (
-                  <option key={item.name} value={item.name}>
-                    {item.name} · {item.provider}
-                  </option>
-                ))}
-              </select>
-              <select
-                className="input-forge font-mono text-xs"
-                value={activeModel}
-                disabled={!profileModels.length}
-                onChange={(e) => {
-                  const model = e.target.value;
-                  const profile = llmProfiles.find((item) => item.name === activeProfile);
-                  if (!profile) return;
-                  void (async () => {
-                    try {
-                      await api.saveLlmProfile({
-                        name: profile.name,
-                        provider: profile.provider,
-                        base_url: profile.base_url,
-                        model,
-                        activate: true,
-                      });
-                      setActiveModel(model);
-                    } catch (err) {
-                      setError(err instanceof Error ? err.message : "Failed to switch model");
-                    }
-                  })();
-                }}
-              >
-                {(profileModels.length ? profileModels : activeModel ? [activeModel] : []).map(
-                  (item) => (
-                    <option key={item} value={item}>
-                      {item}
-                    </option>
-                  ),
-                )}
-              </select>
-            </div>
-          ) : (
-            <p className="text-[11px] text-slate-500">
-              No profile yet.{" "}
-              <Link href="/profiles" className="text-orange-300 hover:text-orange-200">
-                Set one up
-              </Link>
-            </p>
-          )}
           <div className="mt-3 flex items-center justify-between gap-2 text-[11px] text-slate-500">
             <span className="truncate">
               {me ? `${me.name}` : "Local"}
@@ -648,9 +696,24 @@ function ChatPageInner() {
                 className="input-forge font-mono text-xs"
                 value={projectPathInput}
                 onChange={(e) => setProjectPathInput(e.target.value)}
-                placeholder="Open folder path (e.g. C:\Users\...\my-app)"
+                placeholder="Project folder path"
+                title={projectPathInput || "Browse or paste a folder path"}
               />
-              <button type="button" className="btn-ghost shrink-0" onClick={() => void onOpenProject()}>
+              <button
+                type="button"
+                className="btn-ghost shrink-0"
+                onClick={() => void onBrowseProject()}
+                title="Open native folder picker"
+              >
+                Browse
+              </button>
+              <button
+                type="button"
+                className="btn-ghost shrink-0"
+                onClick={() => void onOpenProject()}
+                disabled={!projectPathInput.trim()}
+                title="Bind the selected folder to this chat"
+              >
                 Open
               </button>
             </div>
@@ -670,7 +733,14 @@ function ChatPageInner() {
           {streaming && (
             <div className="max-w-3xl rounded-2xl bg-white/5 px-4 py-3 text-sm text-slate-100">
               <div className="mb-2 flex items-center justify-between gap-3">
-                <p className="text-[11px] uppercase tracking-wide opacity-60">assistant</p>
+                <div className="flex min-w-0 items-center gap-2">
+                  <p className="text-[11px] uppercase tracking-wide opacity-60">assistant</p>
+                  {activeModel && (
+                    <span className="truncate rounded border border-white/10 bg-black/20 px-1.5 py-0.5 font-mono text-[10px] text-slate-400">
+                      {activeModel}
+                    </span>
+                  )}
+                </div>
                 <div className="flex items-center gap-2">
                   {liveContent ? <CopyButton text={liveContent} /> : null}
                   <button type="button" className="btn-stop px-3 py-1.5 text-xs" onClick={() => void onStop()}>
@@ -698,11 +768,18 @@ function ChatPageInner() {
           )}
           {!messages.length && !busy && (
             <div className="mx-auto mt-24 max-w-xl text-center text-slate-400">
-              <p className="font-display text-3xl text-slate-200">Open a project</p>
-              <p className="mt-3 text-sm">
-                Paste a folder path above so the agent can read, edit, and run inside that tree
-                (OpenCode / Hermes style). Chat history still lives under FORGE_HOME.
+              <p className="font-display text-3xl text-slate-200">Start with a project</p>
+              <p className="mt-3 text-sm leading-relaxed">
+                Choose a local folder to give the agent a working directory for reading, editing,
+                and running commands. Conversation history is stored separately under FORGE_HOME.
               </p>
+              <button
+                type="button"
+                className="btn-forge mt-6"
+                onClick={() => void onBrowseProject()}
+              >
+                Browse for folder
+              </button>
             </div>
           )}
           {previewPath && previewContent !== null && (
@@ -756,44 +833,87 @@ function ChatPageInner() {
               ))}
             </div>
           )}
-          <div className="mx-auto flex max-w-3xl items-end gap-2">
-            <button
-              type="button"
-              className="btn-ghost"
-              onClick={() => fileRef.current?.click()}
-              disabled={busy}
-              title="Up to 2 images per prompt"
-            >
-              Attach
-            </button>
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/*,.png,.jpg,.jpeg,.gif,.webp,.pdf,.txt,.md"
-              multiple
-              className="hidden"
-              onChange={(event) => {
-                addAttachments(event.target.files);
-                event.target.value = "";
-              }}
-            />
-            <input
-              className="input-forge"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Message ForgeAI…"
-              disabled={busy}
-            />
-            {busy ? (
-              <button className="btn-stop" type="button" onClick={() => void onStop()}>
-                <span className="inline-block h-2.5 w-2.5 rounded-[2px] bg-red-300" />
-                Stop
+          <div className="mx-auto max-w-3xl space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              {llmProfiles.length > 0 ? (
+                <>
+                  <select
+                    className="input-forge max-w-[11rem] font-mono text-xs"
+                    value={activeProfile || ""}
+                    disabled={busy}
+                    onChange={(e) => void onSwitchProfile(e.target.value)}
+                    title="LLM profile"
+                  >
+                    {llmProfiles.map((item) => (
+                      <option key={item.name} value={item.name}>
+                        {item.name} · {item.provider}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    className="input-forge min-w-0 flex-1 font-mono text-xs"
+                    value={activeModel}
+                    disabled={busy || !profileModels.length}
+                    onChange={(e) => void onSwitchModel(e.target.value)}
+                    title="Model for the next reply"
+                  >
+                    {(profileModels.length ? profileModels : activeModel ? [activeModel] : []).map(
+                      (item) => (
+                        <option key={item} value={item}>
+                          {item}
+                        </option>
+                      ),
+                    )}
+                  </select>
+                </>
+              ) : (
+                <p className="text-[11px] text-slate-500">
+                  No profile yet.{" "}
+                  <Link href="/profiles" className="text-orange-300 hover:text-orange-200">
+                    Set one up
+                  </Link>
+                </p>
+              )}
+            </div>
+            <div className="flex items-end gap-2">
+              <button
+                type="button"
+                className="btn-ghost"
+                onClick={() => fileRef.current?.click()}
+                disabled={busy}
+                title="Up to 2 images per prompt"
+              >
+                Attach
               </button>
-            ) : (
-              <button className="btn-forge" type="submit" disabled={!input.trim() && !pending.length}>
-                Send
-              </button>
-            )}
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/*,.png,.jpg,.jpeg,.gif,.webp,.pdf,.txt,.md"
+                multiple
+                className="hidden"
+                onChange={(event) => {
+                  addAttachments(event.target.files);
+                  event.target.value = "";
+                }}
+              />
+              <input
+                className="input-forge"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder="Message ForgeAI…"
+                disabled={busy}
+              />
+              {busy ? (
+                <button className="btn-stop" type="button" onClick={() => void onStop()}>
+                  <span className="inline-block h-2.5 w-2.5 rounded-[2px] bg-red-300" />
+                  Stop
+                </button>
+              ) : (
+                <button className="btn-forge" type="submit" disabled={!input.trim() && !pending.length}>
+                  Send
+                </button>
+              )}
+            </div>
           </div>
           {error && <p className="mx-auto mt-2 max-w-3xl text-sm text-red-300">{error}</p>}
         </form>
@@ -862,7 +982,7 @@ function ChatPageInner() {
                   </div>
                 </div>
               ) : (
-                <p className="text-slate-500">Open a folder path to browse the project tree.</p>
+                <p className="text-slate-500">Browse for a folder to inspect its tree here.</p>
               )}
               <div>
                 <p className="mb-2 uppercase tracking-wide text-slate-500">session files</p>
@@ -893,6 +1013,28 @@ function ChatPageInner() {
           </button>
         )}
       </aside>
+
+      <ConfirmDialog
+        open={confirm !== null}
+        title={
+          confirm?.kind === "clear-all"
+            ? "Clear all chats?"
+            : "Delete this chat?"
+        }
+        description={
+          confirm?.kind === "clear-all"
+            ? "This removes every chat session, uploads, and workspace files. Artifacts are kept and stay available on the Artifacts page."
+            : `“${confirm?.kind === "delete-chat" ? confirm.title : "Chat"}” will be deleted. Uploads and workspace files for this chat go away; artifacts are kept.`
+        }
+        confirmLabel={confirm?.kind === "clear-all" ? "Clear all" : "Delete chat"}
+        cancelLabel="Cancel"
+        danger
+        busy={confirmBusy}
+        onCancel={() => {
+          if (!confirmBusy) setConfirm(null);
+        }}
+        onConfirm={() => void onConfirmAction()}
+      />
     </div>
   );
 }

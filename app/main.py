@@ -181,6 +181,54 @@ async def health():
     return {"status": "healthy", "version": settings.APP_VERSION}
 
 
+@app.post("/system/browse-folder")
+async def browse_folder(user_id: str = Depends(resolve_user_id)):
+    """
+    Open a native OS folder picker on the machine running the API.
+    Returns the absolute path, or cancelled=true if the user dismissed the dialog.
+    """
+    def _pick() -> str | None:
+        try:
+            import tkinter as tk
+            from tkinter import filedialog
+        except Exception as exc:  # noqa: BLE001
+            raise RuntimeError(
+                "Native folder picker unavailable (tkinter missing). "
+                "Paste the folder path manually instead."
+            ) from exc
+
+        root = tk.Tk()
+        root.withdraw()
+        try:
+            root.attributes("-topmost", True)
+        except Exception:  # noqa: BLE001
+            pass
+        root.update()
+        try:
+            selected = filedialog.askdirectory(title="Select project folder", mustexist=True)
+        finally:
+            root.destroy()
+        return selected or None
+
+    try:
+        selected = await asyncio.to_thread(_pick)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=501, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=500,
+            detail=f"Folder picker failed: {exc}",
+        ) from exc
+
+    if not selected:
+        return {"cancelled": True, "path": None}
+
+    path = Path(selected).expanduser().resolve()
+    if not path.exists() or not path.is_dir():
+        raise HTTPException(status_code=400, detail="Selected path is not a folder")
+    return {"cancelled": False, "path": str(path)}
+
+
 @app.get("/tools")
 async def list_tools():
     return {"tools": [item.model_dump() for item in registry.discover()]}
@@ -337,11 +385,32 @@ async def list_sessions(user_id: str = Depends(resolve_user_id)):
     return {"sessions": storage.list_sessions(user_id)}
 
 
+@app.delete("/sessions")
+async def delete_all_sessions(
+    keep_artifacts: bool = True,
+    user_id: str = Depends(resolve_user_id),
+):
+    """
+    Delete every chat/session for the current user.
+    By default artifacts are retained under the user's retained_artifacts store.
+    """
+    result = storage.delete_all_sessions(user_id, keep_artifacts=keep_artifacts)
+    return result
+
+
 @app.delete("/sessions/{session_id}")
-async def delete_session(session_id: str, user_id: str = Depends(resolve_user_id)):
-    if not storage.delete_session(session_id, user_id):
+async def delete_session(
+    session_id: str,
+    keep_artifacts: bool = True,
+    user_id: str = Depends(resolve_user_id),
+):
+    if not storage.delete_session(session_id, user_id, keep_artifacts=keep_artifacts):
         raise HTTPException(status_code=404, detail="Session not found")
-    return {"deleted": True, "session_id": session_id}
+    return {
+        "deleted": True,
+        "session_id": session_id,
+        "keep_artifacts": keep_artifacts,
+    }
 
 
 @app.get("/sessions/{session_id}")
@@ -612,9 +681,42 @@ async def delete_session_file(
 @app.get("/artifacts")
 async def list_artifacts(user_id: str = Depends(resolve_user_id)):
     """
-    Cumulative uploads/artifacts/workspace files across the user's sessions.
+    Cumulative uploads/artifacts/workspace files across the user's sessions,
+    including artifacts retained after chats were deleted.
     """
     return {"artifacts": storage.list_user_files(user_id)}
+
+
+@app.get("/retained-artifacts/{session_id}/{filename}")
+async def download_retained_artifact(
+    session_id: str,
+    filename: str,
+    user_id: str = Depends(resolve_user_id),
+):
+    folder = paths.retained_artifacts_session_dir(user_id, session_id)
+    name = Path(filename).name
+    if name == "_meta.json":
+        raise HTTPException(status_code=404, detail="File not found")
+    target = (folder / name).resolve()
+    if not target.is_relative_to(folder.resolve()) or not target.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+    return FileResponse(target, filename=name)
+
+
+@app.delete("/retained-artifacts/{session_id}/{filename}")
+async def delete_retained_artifact(
+    session_id: str,
+    filename: str,
+    user_id: str = Depends(resolve_user_id),
+):
+    result = storage.delete_retained_artifact(
+        user_id=user_id,
+        session_id=session_id,
+        filename=filename,
+    )
+    if result is None:
+        raise HTTPException(status_code=404, detail="File not found")
+    return result
 
 
 @app.get("/sessions/{session_id}/stats")

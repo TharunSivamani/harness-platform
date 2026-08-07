@@ -190,10 +190,18 @@ class ChatLoop:
         response,
         *,
         extra: dict[str, Any] | None = None,
+        model_info: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         meta: dict[str, Any] = dict(extra or {})
         if getattr(response, "thinking", None):
             meta["thinking"] = response.thinking
+        if model_info:
+            if model_info.get("model"):
+                meta["model"] = model_info["model"]
+            if model_info.get("provider"):
+                meta["provider"] = model_info["provider"]
+            if model_info.get("profile"):
+                meta["profile"] = model_info["profile"]
         return meta
 
     async def run(
@@ -213,6 +221,15 @@ class ChatLoop:
         # Ensure workspace exists for tools
         paths.workspace_path(user_id, session_id)
         self.kernel.role = role or storage.get_user(user_id)["role"]
+
+        from app.llm.profiles import resolve_llm_config
+
+        resolved = resolve_llm_config()
+        model_info = {
+            "model": resolved.model,
+            "provider": resolved.provider,
+            "profile": resolved.profile_name,
+        }
 
         text = (content or "").strip()
         resolved_attachments = self._resolve_attachments(user_id, session_id, attachments)
@@ -337,6 +354,7 @@ class ChatLoop:
                         metadata=self._assistant_metadata(
                             response,
                             extra={"tool_calls": openai_tool_calls},
+                            model_info=model_info,
                         ),
                     )
                     await self._emit(
@@ -418,7 +436,7 @@ class ChatLoop:
                     user_id=user_id,
                     role="assistant",
                     content=final_text,
-                    metadata=self._assistant_metadata(response),
+                    metadata=self._assistant_metadata(response, model_info=model_info),
                 )
                 await self._emit(
                     session_id,
@@ -427,6 +445,8 @@ class ChatLoop:
                         "content": final_text,
                         "thinking": response.thinking,
                         "step": step,
+                        "model": model_info.get("model"),
+                        "provider": model_info.get("provider"),
                     },
                 )
                 break
@@ -437,7 +457,12 @@ class ChatLoop:
                     user_id=user_id,
                     role="assistant",
                     content=final_text,
-                    metadata={"stopped": "max_steps"},
+                    metadata={
+                        "stopped": "max_steps",
+                        "model": model_info.get("model"),
+                        "provider": model_info.get("provider"),
+                        "profile": model_info.get("profile"),
+                    },
                 )
         except ChatCancelled:
             cancelled = True
@@ -447,7 +472,12 @@ class ChatLoop:
                 user_id=user_id,
                 role="assistant",
                 content=final_text,
-                metadata={"stopped": "cancelled"},
+                metadata={
+                    "stopped": "cancelled",
+                    "model": model_info.get("model"),
+                    "provider": model_info.get("provider"),
+                    "profile": model_info.get("profile"),
+                },
             )
             await self._emit(
                 session_id,

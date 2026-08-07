@@ -249,10 +249,64 @@ class Storage:
         assert updated is not None
         return updated
 
-    def delete_session(self, session_id: str, user_id: str) -> bool:
+    def _preserve_session_artifacts(
+        self,
+        user_id: str,
+        session_id: str,
+        session_title: str,
+    ) -> int:
+        """Move session artifacts aside so they survive chat/session deletion."""
+        source = paths.artifacts_path(user_id, session_id)
+        if not source.exists():
+            return 0
+        files = [item for item in source.iterdir() if item.is_file()]
+        if not files:
+            return 0
+
+        dest = paths.retained_artifacts_session_dir(user_id, session_id)
+        meta_path = dest / "_meta.json"
+        meta = paths.read_json(
+            meta_path,
+            {
+                "session_id": session_id,
+                "session_title": session_title,
+                "retained_at": _now(),
+            },
+        )
+        meta["session_title"] = session_title or meta.get("session_title") or "Deleted chat"
+        meta["retained_at"] = _now()
+        paths.write_json(meta_path, meta)
+
+        moved = 0
+        for file_path in files:
+            target = dest / file_path.name
+            if target.exists():
+                stem = file_path.stem
+                suffix = file_path.suffix
+                target = dest / f"{stem}-{paths.new_id()[:8]}{suffix}"
+            shutil.move(str(file_path), str(target))
+            moved += 1
+        return moved
+
+    def delete_session(
+        self,
+        session_id: str,
+        user_id: str,
+        *,
+        keep_artifacts: bool = True,
+    ) -> bool:
         session = self.get_session(session_id)
         if not session or session["user_id"] != user_id:
             return False
+
+        retained = 0
+        if keep_artifacts:
+            retained = self._preserve_session_artifacts(
+                user_id,
+                session_id,
+                session.get("title") or "Deleted chat",
+            )
+
         with self._connect() as conn:
             conn.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
             conn.execute("DELETE FROM token_usage WHERE session_id = ?", (session_id,))
@@ -263,8 +317,51 @@ class Storage:
         session_path = paths.user_dir(user_id) / "sessions" / session_id
         if session_path.exists():
             shutil.rmtree(session_path, ignore_errors=True)
-        self.audit("session.deleted", {"session_id": session_id, "user_id": user_id})
+        self.audit(
+            "session.deleted",
+            {
+                "session_id": session_id,
+                "user_id": user_id,
+                "keep_artifacts": keep_artifacts,
+                "artifacts_retained": retained,
+            },
+        )
         return True
+
+    def delete_all_sessions(
+        self,
+        user_id: str,
+        *,
+        keep_artifacts: bool = True,
+    ) -> dict[str, Any]:
+        sessions = self.list_sessions(user_id)
+        deleted = 0
+        artifacts_retained = 0
+        for session in sessions:
+            session_id = session["session_id"]
+            if keep_artifacts:
+                artifacts_retained += self._preserve_session_artifacts(
+                    user_id,
+                    session_id,
+                    session.get("title") or "Deleted chat",
+                )
+            # Artifacts already moved above; skip a second preserve pass.
+            if self.delete_session(session_id, user_id, keep_artifacts=False):
+                deleted += 1
+        self.audit(
+            "sessions.cleared",
+            {
+                "user_id": user_id,
+                "deleted": deleted,
+                "keep_artifacts": keep_artifacts,
+                "artifacts_retained": artifacts_retained,
+            },
+        )
+        return {
+            "deleted": deleted,
+            "keep_artifacts": keep_artifacts,
+            "artifacts_retained": artifacts_retained,
+        }
 
     def touch_session(self, session_id: str, title: str | None = None) -> None:
         now = _now()
@@ -391,10 +488,66 @@ class Storage:
                                 stat.st_mtime, tz=timezone.utc
                             ).isoformat(),
                             "url": f"/sessions/{session_id}/files/{kind}/{file_path.name}",
+                            "retained": False,
                         }
                     )
+
+        retained_root = paths.retained_artifacts_dir(user_id)
+        if retained_root.exists():
+            for session_dir in retained_root.iterdir():
+                if not session_dir.is_dir():
+                    continue
+                meta = paths.read_json(session_dir / "_meta.json", {})
+                title = meta.get("session_title") or "Deleted chat"
+                for file_path in session_dir.iterdir():
+                    if not file_path.is_file() or file_path.name == "_meta.json":
+                        continue
+                    stat = file_path.stat()
+                    items.append(
+                        {
+                            "session_id": session_dir.name,
+                            "session_title": title,
+                            "kind": "artifact",
+                            "name": file_path.name,
+                            "size": stat.st_size,
+                            "modified_at": datetime.fromtimestamp(
+                                stat.st_mtime, tz=timezone.utc
+                            ).isoformat(),
+                            "url": (
+                                f"/retained-artifacts/{session_dir.name}/"
+                                f"{file_path.name}"
+                            ),
+                            "retained": True,
+                        }
+                    )
+
         items.sort(key=lambda row: row["modified_at"], reverse=True)
         return items
+
+    def delete_retained_artifact(
+        self,
+        *,
+        user_id: str,
+        session_id: str,
+        filename: str,
+    ) -> dict[str, Any] | None:
+        folder = paths.retained_artifacts_session_dir(user_id, session_id)
+        name = Path(filename).name
+        if name == "_meta.json":
+            return None
+        target = (folder / name).resolve()
+        if not target.is_relative_to(folder.resolve()) or not target.exists():
+            return None
+        target.unlink(missing_ok=True)
+        payload = {
+            "session_id": session_id,
+            "kind": "artifact",
+            "name": name,
+            "retained": True,
+            "deleted_at": _now(),
+        }
+        self.audit("retained_artifact.deleted", {"user_id": user_id, **payload})
+        return payload
 
     def delete_session_file(
         self,

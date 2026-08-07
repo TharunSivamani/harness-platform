@@ -97,6 +97,17 @@ class ForgePaths:
     def artifacts_path(self, user_id: str, session_id: str) -> Path:
         return self.session_dir(user_id, session_id) / "artifacts"
 
+    def retained_artifacts_dir(self, user_id: str) -> Path:
+        """Survives session deletion when keep_artifacts=True."""
+        path = self.user_dir(user_id) / "retained_artifacts"
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def retained_artifacts_session_dir(self, user_id: str, session_id: str) -> Path:
+        path = self.retained_artifacts_dir(user_id) / session_id
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
     def write_json(self, path: Path, payload: dict[str, Any]) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(payload, indent=2), encoding="utf-8")

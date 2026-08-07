@@ -172,8 +172,8 @@ function ToolChip({ message }: { message: Message }) {
   return (
     <div
       className={`rounded-xl border px-3 py-2 ${info.success
-          ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-100"
-          : "border-red-400/30 bg-red-500/10 text-red-100"
+        ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-100"
+        : "border-red-400/30 bg-red-500/10 text-red-100"
         }`}
     >
       <button
@@ -283,8 +283,8 @@ export function ChatTranscript({
             <div
               key={item.id}
               className={`max-w-3xl space-y-2 rounded-2xl border px-4 py-3 ${failed
-                  ? "border-red-400/20 bg-red-500/5"
-                  : "border-cyan-500/20 bg-cyan-500/5"
+                ? "border-red-400/20 bg-red-500/5"
+                : "border-cyan-500/20 bg-cyan-500/5"
                 }`}
             >
               <p className="text-[11px] uppercase tracking-wide text-slate-400">
@@ -314,14 +314,33 @@ export function ChatTranscript({
         return (
           <div
             key={message.message_id}
-            className={`max-w-3xl rounded-2xl px-4 py-3 text-sm ${
-              item.kind === "user"
+            className={`max-w-3xl rounded-2xl px-4 py-3 text-sm ${item.kind === "user"
                 ? "ml-auto bg-orange-500/20 text-orange-50"
                 : "bg-white/5 text-slate-100"
-            }`}
+              }`}
           >
             <div className="mb-1 flex items-center justify-between gap-3">
-              <p className="text-[11px] uppercase tracking-wide opacity-60">{message.role}</p>
+              <div className="flex min-w-0 items-center gap-2">
+                <p className="text-[11px] uppercase tracking-wide opacity-60">{message.role}</p>
+                {item.kind === "assistant" &&
+                  typeof message.metadata?.model === "string" &&
+                  message.metadata.model && (
+                    <span
+                      className="truncate rounded border border-white/10 bg-black/20 px-1.5 py-0.5 font-mono text-[10px] text-slate-400"
+                      title={
+                        [
+                          message.metadata.profile,
+                          message.metadata.provider,
+                          message.metadata.model,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")
+                      }
+                    >
+                      {message.metadata.model}
+                    </span>
+                  )}
+              </div>
               {item.kind === "assistant" && text && text !== "(attachment)" && (
                 <CopyButton text={text} />
               )}
