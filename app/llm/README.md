@@ -1,31 +1,45 @@
-# `app/llm/`
+# LLM providers
 
-Provider-agnostic LLM layer with failover routing.
+Provider-agnostic chat/completions with failover via `LLMRouter`, plus persistent **profiles** under `FORGE_HOME/llm/`.
 
-## Files
+| File | Role |
+|------|------|
+| `base.py` | `BaseLLM` + `LLMResponse` (`content`, `thinking`, tool calls, tokens) |
+| `profiles.py` | Named profiles, active selection, model autofetch |
+| `factory.py` | Provider factory from resolved profile/env |
+| `router.py` | Primary + fallback routing |
+| `openai_provider.py` | OpenAI / OpenAI-compatible Chat Completions |
+| `anthropic_provider.py` | Anthropic Messages |
+| `ollama_provider.py` | Local Ollama `/api/chat` (tools + thinking models) |
+| `vllm_provider.py` | OpenAI-compatible vLLM |
 
-| File | Purpose |
-|------|---------|
-| `base.py` | `BaseLLM` interface (`complete`) |
-| `factory.py` | `get_llm(provider)` factory |
-| `router.py` | `LLMRouter` with primary + fallback providers |
-| `openai_provider.py` | OpenAI Chat Completions |
-| `anthropic_provider.py` | Anthropic Messages API |
-| `ollama_provider.py` | Local Ollama `/api/generate` |
-| `vllm_provider.py` | OpenAI-compatible vLLM endpoint |
+## Profiles (preferred)
 
-## Examples
+```bash
+forge setup
+forge profile list
+forge profile use ollama-local
+forge chat --profile ollama-local "hi"
+```
+
+Stored at `{FORGE_HOME}/llm/profiles.json` + `active.json`.
+
+## Env fallbacks
+
+```env
+LLM_PROVIDER=ollama
+MODEL_NAME=qwen3-vl:2b-thinking
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_THINK=true
+```
+
+Thinking models (e.g. Qwen3 `*-thinking`) return a separate `thinking` field. ForgeAI stores it on assistant message metadata and shows a collapsible Thought block in the UI.
 
 ```python
 from app.llm.factory import get_llm
 
-llm = get_llm("ollama")
-text = await llm.complete("Say hello", system="Be brief")
-```
-
-```python
-from app.llm.router import llm_router
-
-# tries OPENAI then fallbacks from settings.LLM_FALLBACK_PROVIDERS
-text = await llm_router.complete("Return JSON only")
+llm = get_llm()  # uses active profile
+response = await llm.chat([{"role": "user", "content": "Hello!"}])
+print(response.thinking)
+print(response.content)
 ```

@@ -7,7 +7,11 @@ from app.tools.filesystem.paths import get_workspace_root, resolve_workspace_pat
 
 manifest = ToolManifest(
     name="filesystem",
-    description="Read, write, and list files inside the workspace.",
+    description=(
+        "List, read, or write files in the workspace. "
+        "For code edits prefer read_file / write_file / patch. "
+        "action=list|read|write; path relative to workspace; content required for write."
+    ),
     keywords=[
         "file",
         "files",
@@ -20,6 +24,27 @@ manifest = ToolManifest(
         "path",
     ],
     permissions=["filesystem.read", "filesystem.write"],
+    parameters={
+        "type": "object",
+        "properties": {
+            "action": {
+                "type": "string",
+                "enum": ["list", "read", "write"],
+                "description": "list: directory entries; read: file text; write: write content",
+            },
+            "path": {
+                "type": "string",
+                "description": "Relative path (default . for list)",
+                "default": ".",
+            },
+            "content": {
+                "type": "string",
+                "description": "Text to write when action=write",
+            },
+        },
+        "required": ["action"],
+        "additionalProperties": False,
+    },
 )
 
 

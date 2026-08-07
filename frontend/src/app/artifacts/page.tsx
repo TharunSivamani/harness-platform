@@ -1,27 +1,22 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
-import { api } from "@/lib/api";
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
+import { UserArtifact, api } from "@/lib/api";
+import { formatBytes } from "@/lib/format";
 
-type Artifact = {
-  artifact_id: string;
-  name: string;
-  media_type: string;
-  size: number;
-  version: number;
-  created_at: string;
-};
+const IMAGE_EXT = /\.(png|jpe?g|gif|webp|bmp|tiff?)$/i;
 
 export default function ArtifactsPage() {
-  const [artifacts, setArtifacts] = useState<Artifact[]>([]);
+  const [userId, setUserId] = useState("local");
+  const [artifacts, setArtifacts] = useState<UserArtifact[]>([]);
+  const [filter, setFilter] = useState<"all" | "upload" | "artifact" | "workspace">("all");
   const [error, setError] = useState("");
-  const [name, setName] = useState("note.txt");
-  const [content, setContent] = useState("hello from ForgeAI UI");
-  const [busy, setBusy] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
-  async function refresh() {
+  async function refresh(uid = userId) {
     try {
-      const data = await api.artifacts();
+      const data = await api.artifacts(uid);
       setArtifacts(data.artifacts);
       setError("");
     } catch (err) {
@@ -30,93 +25,150 @@ export default function ArtifactsPage() {
   }
 
   useEffect(() => {
-    void refresh();
-  }, []);
+    void refresh(userId);
+  }, [userId]);
 
-  async function onUpload(event: FormEvent) {
-    event.preventDefault();
-    setBusy(true);
+  const visible = useMemo(
+    () => (filter === "all" ? artifacts : artifacts.filter((item) => item.kind === filter)),
+    [artifacts, filter],
+  );
+
+  async function onDelete(item: UserArtifact) {
+    if (
+      !window.confirm(
+        `Delete ${item.name} from this session?\n\nChat text stays as memory. The model will no longer receive this file on later turns.`,
+      )
+    ) {
+      return;
+    }
+    const key = `${item.session_id}:${item.kind}:${item.name}`;
+    setBusyId(key);
     try {
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"}/upload`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name,
-            content,
-            media_type: "text/plain",
-          }),
-        },
+      await api.deleteFile(
+        item.session_id,
+        item.kind as "upload" | "artifact" | "workspace",
+        item.name,
+        userId,
       );
-      if (!response.ok) throw new Error(await response.text());
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Upload failed");
+      setError(err instanceof Error ? err.message : "Delete failed");
     } finally {
-      setBusy(false);
+      setBusyId(null);
     }
   }
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[1fr_1fr]">
-      <section className="panel p-5">
-        <h1 className="font-display text-2xl text-steel-50">Artifacts</h1>
-        <p className="mt-1 text-sm text-steel-300">
-          First-class outputs stored by the runtime
-        </p>
-
-        <div className="mt-5 space-y-3">
-          {artifacts.map((artifact) => (
-            <div
-              key={artifact.artifact_id}
-              className="rounded-lg border border-steel-700 bg-steel-950/50 p-3"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="font-medium text-steel-50">{artifact.name}</p>
-                  <p className="mt-1 font-mono text-[11px] text-steel-500">
-                    v{artifact.version} · {artifact.media_type} · {artifact.size}{" "}
-                    bytes
-                  </p>
-                </div>
-                <a
-                  className="btn-ghost"
-                  href={api.artifactUrl(artifact.artifact_id)}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Download
-                </a>
-              </div>
-            </div>
-          ))}
-          {!artifacts.length && (
-            <p className="text-sm text-steel-400">No artifacts yet.</p>
-          )}
+    <div className="flex h-screen overflow-hidden bg-[#0b0f14] text-slate-100">
+      <aside className="flex w-72 shrink-0 flex-col border-r border-white/10 bg-[#0f141b]">
+        <div className="border-b border-white/10 p-4">
+          <p className="font-display text-2xl text-orange-300">ForgeAI</p>
+          <p className="mt-1 text-xs text-slate-400">All session files</p>
+          <Link href="/" className="btn-forge mt-4 flex w-full">
+            Back to chat
+          </Link>
         </div>
-        {error && <p className="mt-4 text-sm text-red-300">{error}</p>}
-      </section>
-
-      <section className="panel p-5">
-        <h2 className="font-display text-xl text-steel-50">Upload</h2>
-        <form onSubmit={onUpload} className="mt-4 space-y-3">
+        <div className="space-y-2 p-4 text-xs text-slate-400">
+          <label className="mb-1 block">User id</label>
           <input
             className="input-forge"
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            placeholder="filename.txt"
+            value={userId}
+            onChange={(e) => setUserId(e.target.value)}
           />
-          <textarea
-            className="input-forge min-h-40"
-            value={content}
-            onChange={(event) => setContent(event.target.value)}
-          />
-          <button className="btn-forge" type="submit" disabled={busy}>
-            {busy ? "Uploading…" : "Upload to workspace"}
-          </button>
-        </form>
-      </section>
+          <p className="pt-2 text-slate-500">
+            Deleting a file removes it from disk. Prior chat messages remain so conversation memory
+            continues; missing attachments are marked and skipped on future model turns.
+          </p>
+        </div>
+      </aside>
+
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-white/10 px-6 py-4">
+          <div>
+            <h1 className="font-display text-xl">Artifacts</h1>
+            <p className="text-xs text-slate-400">{visible.length} files</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {(["all", "upload", "artifact", "workspace"] as const).map((kind) => (
+              <button
+                key={kind}
+                type="button"
+                className={`rounded-lg px-3 py-1.5 text-xs ${filter === kind ? "bg-orange-500/20 text-orange-200" : "bg-white/5 text-slate-400"
+                  }`}
+                onClick={() => setFilter(kind)}
+              >
+                {kind}
+              </button>
+            ))}
+          </div>
+        </header>
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
+          <div className="mx-auto grid max-w-5xl gap-3">
+            {visible.map((item) => {
+              const key = `${item.session_id}:${item.kind}:${item.name}`;
+              const isImage = item.kind === "upload" && IMAGE_EXT.test(item.name);
+              return (
+                <div
+                  key={key}
+                  className="flex flex-wrap items-center gap-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4"
+                >
+                  {isImage ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={api.fileUrl(item.session_id, "upload", item.name)}
+                      alt={item.name}
+                      className="h-16 w-16 rounded-lg object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-16 w-16 items-center justify-center rounded-lg bg-white/5 font-mono text-[10px] text-slate-500">
+                      {item.kind}
+                    </div>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-medium">{item.name}</p>
+                    <p className="mt-1 font-mono text-[11px] text-slate-500">
+                      {item.session_title} · {formatBytes(item.size)} · {item.kind}
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <Link
+                      href={`/?session=${item.session_id}`}
+                      className="btn-ghost"
+                    >
+                      Open chat
+                    </Link>
+                    <a
+                      className="btn-ghost"
+                      href={api.fileUrl(
+                        item.session_id,
+                        item.kind as "upload" | "artifact" | "workspace",
+                        item.name,
+                      )}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Download
+                    </a>
+                    <button
+                      type="button"
+                      className="btn-ghost text-red-200 hover:border-red-400/40"
+                      disabled={busyId === key}
+                      onClick={() => void onDelete(item)}
+                    >
+                      {busyId === key ? "…" : "Delete"}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+            {!visible.length && (
+              <p className="py-20 text-center text-sm text-slate-500">No files yet.</p>
+            )}
+            {error && <p className="text-sm text-red-300">{error}</p>}
+          </div>
+        </div>
+      </main>
     </div>
   );
 }

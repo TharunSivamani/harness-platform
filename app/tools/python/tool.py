@@ -10,7 +10,10 @@ from app.core.config import settings
 
 manifest = ToolManifest(
     name="python",
-    description="Evaluate restricted Python expressions safely.",
+    description=(
+        "Run restricted Python: short expressions (mode=auto) or a small script (mode=script). "
+        "Use for computation that needs Python, not for editing project files."
+    ),
     keywords=[
         "python",
         "code",
@@ -20,6 +23,23 @@ manifest = ToolManifest(
         "run python",
     ],
     permissions=["python.execute"],
+    parameters={
+        "type": "object",
+        "properties": {
+            "code": {
+                "type": "string",
+                "description": "Python expression or script source to run",
+            },
+            "mode": {
+                "type": "string",
+                "enum": ["auto", "script"],
+                "description": "auto: expression/eval; script: multi-statement (default auto)",
+                "default": "auto",
+            },
+        },
+        "required": ["code"],
+        "additionalProperties": False,
+    },
 )
 
 _BINARY_OPS = {

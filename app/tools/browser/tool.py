@@ -8,7 +8,11 @@ from app.tools.filesystem.paths import get_workspace_root, resolve_workspace_pat
 
 manifest = ToolManifest(
     name="browser",
-    description="Navigate pages, extract text, and take screenshots with Playwright.",
+    description=(
+        "Browser via Playwright. action=navigate: open url; "
+        "action=content: return page text for url; "
+        "action=screenshot: save screenshot of url to path."
+    ),
     keywords=[
         "browser",
         "browse",
@@ -21,6 +25,27 @@ manifest = ToolManifest(
         "open",
     ],
     permissions=["browser.navigate", "browser.screenshot"],
+    parameters={
+        "type": "object",
+        "properties": {
+            "action": {
+                "type": "string",
+                "enum": ["navigate", "content", "screenshot"],
+                "description": "What to do in the browser",
+            },
+            "url": {
+                "type": "string",
+                "description": "Page URL (required for navigate/content/screenshot)",
+            },
+            "path": {
+                "type": "string",
+                "description": "Workspace-relative path for screenshot output (default screenshot.png)",
+                "default": "screenshot.png",
+            },
+        },
+        "required": ["action"],
+        "additionalProperties": False,
+    },
 )
 
 

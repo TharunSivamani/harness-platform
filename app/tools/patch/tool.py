@@ -7,9 +7,36 @@ from app.tools.workspace_paths import resolve_in_workspace
 
 manifest = ToolManifest(
     name="patch",
-    description="Replace old_string with new_string in a workspace file. Prefer this over sed/awk.",
+    description=(
+        "Exact string replace in a project file: replace old_string with new_string. "
+        "Prefer this over sed/awk. old_string must match uniquely unless replace_all is true."
+    ),
     keywords=["patch", "replace", "edit", "diff"],
     permissions=["patch"],
+    parameters={
+        "type": "object",
+        "properties": {
+            "path": {
+                "type": "string",
+                "description": "Relative path of the file to patch",
+            },
+            "old_string": {
+                "type": "string",
+                "description": "Exact text to find in the file (must be unique unless replace_all)",
+            },
+            "new_string": {
+                "type": "string",
+                "description": "Replacement text",
+            },
+            "replace_all": {
+                "type": "boolean",
+                "description": "If true, replace every occurrence; if false, require a unique match",
+                "default": False,
+            },
+        },
+        "required": ["path", "old_string", "new_string"],
+        "additionalProperties": False,
+    },
 )
 
 

@@ -6,7 +6,7 @@ services:
     environment:
       - WORKSPACE_ROOT=/app/workspace
       - ARTIFACT_ROOT=/app/artifacts
-      - SANDBOX_BACKEND=local
+      - SANDBOX_BACKEND=auto
       - PLANNER_MODE=keyword
       - CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
     volumes:

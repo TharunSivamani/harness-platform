@@ -73,13 +73,15 @@ class PlannerAgent(BaseAgent):
         manifests = registry.discover()
         tool_lines = []
         for manifest in manifests:
+            params = json.dumps(manifest.parameters or {}, separators=(",", ":"))
             tool_lines.append(
-                f"- {manifest.name}: {manifest.description} "
-                f"(keywords: {', '.join(manifest.keywords)})"
+                f"- {manifest.name}: {manifest.description}\n"
+                f"  parameters schema: {params}"
             )
 
         system = (
             "You are the ForgeAI planner. Choose exactly one tool and arguments. "
+            "Use only argument keys from that tool's parameters schema. "
             "Respond with JSON only in this shape: "
             '{"tool": "<name>", "arguments": {}}. '
             "Do not include markdown."

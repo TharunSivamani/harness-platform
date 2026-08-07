@@ -838,9 +838,8 @@ function ChatPageInner() {
                       <button
                         key={entry.path}
                         type="button"
-                        className={`flex w-full items-center gap-2 rounded px-1.5 py-1 text-left font-mono hover:bg-white/5 ${
-                          entry.type === "dir" ? "text-slate-400" : "text-slate-200"
-                        }`}
+                        className={`flex w-full items-center gap-2 rounded px-1.5 py-1 text-left font-mono hover:bg-white/5 ${entry.type === "dir" ? "text-slate-400" : "text-slate-200"
+                          }`}
                         onClick={() => {
                           if (entry.type === "file") void onPreviewFile(entry.path);
                         }}

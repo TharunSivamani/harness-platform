@@ -1,22 +1,22 @@
 from pathlib import Path
 
-from app.core.config import settings
-from app.storage.paths import paths
+from app.tools.workspace_paths import session_workspace
 
 
 def get_workspace_root() -> Path:
-    root = paths.root / "workspace"
+    """Unified with project_root / session workspace (no separate global tree)."""
+    root = session_workspace()
     root.mkdir(parents=True, exist_ok=True)
     return root
 
 
 def resolve_workspace_path(relative_path: str = ".") -> Path:
     """
-    Resolve a path under the workspace root.
+    Resolve a path under the active project/workspace root.
 
-    Raises ValueError if the path escapes the workspace.
+    Raises ValueError if the path escapes the root.
     """
-    root = get_workspace_root()
+    root = get_workspace_root().resolve()
     candidate = (root / relative_path).resolve()
 
     if not candidate.is_relative_to(root):

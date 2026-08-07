@@ -9,7 +9,7 @@ from app.tools.base import BaseTool
 
 manifest = ToolManifest(
     name="search",
-    description="Search the web for information.",
+    description="Search the web (DuckDuckGo) and return titled results with URLs and snippets.",
     keywords=[
         "search",
         "google",
@@ -20,6 +20,24 @@ manifest = ToolManifest(
         "internet",
     ],
     permissions=["search"],
+    parameters={
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "Search query string",
+            },
+            "max_results": {
+                "type": "integer",
+                "description": "Number of results to return (1-10, default 5)",
+                "default": 5,
+                "minimum": 1,
+                "maximum": 10,
+            },
+        },
+        "required": ["query"],
+        "additionalProperties": False,
+    },
 )
 
 

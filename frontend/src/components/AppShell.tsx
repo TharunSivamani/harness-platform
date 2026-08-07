@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 
 const links = [
   { href: "/", label: "Chat" },
+  { href: "/profiles", label: "Profiles" },
   { href: "/run", label: "Run" },
   { href: "/tools", label: "Tools" },
   { href: "/sessions", label: "Sessions" },
@@ -12,8 +13,18 @@ const links = [
   { href: "/ops", label: "Ops" },
 ];
 
+const FULLSCREEN = new Set(["/", "/artifacts", "/profiles"]);
+
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const fullscreen =
+    FULLSCREEN.has(pathname) ||
+    pathname.startsWith("/artifacts") ||
+    pathname.startsWith("/profiles");
+
+  if (fullscreen) {
+    return <>{children}</>;
+  }
 
   return (
     <div className="relative min-h-screen overflow-hidden">
@@ -30,7 +41,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               Agent operating system console — plan, execute, inspect.
             </p>
           </div>
-          <nav className="flex gap-1 pb-1">
+          <nav className="flex flex-wrap justify-end gap-1 pb-1">
             {links.map((link) => {
               const active =
                 link.href === "/"
@@ -40,11 +51,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <Link
                   key={link.href}
                   href={link.href}
-                  className={`rounded-md px-3 py-2 text-sm transition ${
-                    active
+                  className={`rounded-md px-3 py-2 text-sm transition ${active
                       ? "bg-ember-500/15 text-ember-300"
                       : "text-steel-300 hover:bg-steel-800/80 hover:text-steel-50"
-                  }`}
+                    }`}
                 >
                   {link.label}
                 </Link>

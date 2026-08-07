@@ -28,6 +28,6 @@ Create a `.env`:
 
 ```env
 PLANNER_MODE=keyword
-SANDBOX_BACKEND=local
+SANDBOX_BACKEND=auto
 OPENAI_API_KEY=sk-...
 ```

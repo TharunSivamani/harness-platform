@@ -219,21 +219,7 @@ class ChatLoop:
         if not text and not resolved_attachments:
             raise ValueError("Message content or attachments required.")
 
-        if session["title"] in {"New chat", "New Chat"} and (text or resolved_attachments):
-            provisional = (
-                text[:48]
-                if text
-                else f"Image: {resolved_attachments[0]['name']}"
-            )
-            storage.touch_session(session_id, title=provisional)
-            await self._emit(session_id, "SessionTitle", {"title": provisional})
-            # LLM summary title — do not block the tool loop.
-            asyncio.create_task(
-                self._summarize_session_title(
-                    session_id=session_id,
-                    seed=text or provisional,
-                )
-            )
+        needs_title = session["title"] in {"New chat", "New Chat"}
 
         user_meta: dict[str, Any] = {}
         if resolved_attachments:
@@ -473,6 +459,13 @@ class ChatLoop:
         finally:
             self._clear_cancel(session_id)
 
+        if needs_title and final_text and not cancelled:
+            await self._summarize_session_title(
+                session_id=session_id,
+                user_text=text or "(attachment)",
+                assistant_text=final_text,
+            )
+
         await self._emit(
             session_id,
             "ChatCompleted",
@@ -491,24 +484,34 @@ class ChatLoop:
             "messages": storage.list_messages(session_id),
         }
 
-    async def _summarize_session_title(self, *, session_id: str, seed: str) -> None:
-        """Replace the provisional title with a short LLM summary for the sidebar."""
+    async def _summarize_session_title(
+        self,
+        *,
+        session_id: str,
+        user_text: str,
+        assistant_text: str,
+    ) -> None:
+        """Set sidebar title after the first assistant reply (user + answer context)."""
         try:
             raw = await llm_router.complete(
                 prompt=(
-                    "Create a short chat sidebar title (3-7 words) for this user request. "
+                    "Create a short chat sidebar title (3-7 words) for this conversation. "
                     "No quotes, no trailing punctuation, no markdown.\n\n"
-                    f"{(seed or '').strip()[:500]}"
+                    f"User:\n{(user_text or '').strip()[:400]}\n\n"
+                    f"Assistant:\n{(assistant_text or '').strip()[:400]}"
                 ),
                 system="You name chat sessions. Reply with only the title text.",
             )
             title = " ".join((raw or "").strip().split())[:60]
             if not title:
-                return
+                title = " ".join((user_text or "Chat").split())[:48] or "Chat"
             storage.touch_session(session_id, title=title)
             await self._emit(session_id, "SessionTitle", {"title": title})
         except Exception as exc:  # noqa: BLE001
             logger.warning("Session title summary failed: %s", exc)
+            fallback = " ".join((user_text or "Chat").split())[:48] or "Chat"
+            storage.touch_session(session_id, title=fallback)
+            await self._emit(session_id, "SessionTitle", {"title": fallback})
 
     async def _heuristic_turn(self, text: str):
         from app.llm.base import LLMResponse

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import shutil
 import sqlite3
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from app.core.config import settings
@@ -45,6 +47,7 @@ class Storage:
                     user_id TEXT NOT NULL,
                     title TEXT NOT NULL,
                     model TEXT,
+                    project_root TEXT,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     FOREIGN KEY(user_id) REFERENCES users(user_id)
@@ -87,6 +90,12 @@ class Storage:
                 );
                 """
             )
+            cols = {
+                row[1]
+                for row in conn.execute("PRAGMA table_info(sessions)").fetchall()
+            }
+            if "project_root" not in cols:
+                conn.execute("ALTER TABLE sessions ADD COLUMN project_root TEXT")
 
     def ensure_default_user(self) -> dict[str, Any]:
         user = self.get_user(settings.DEFAULT_USER_ID)
@@ -139,23 +148,33 @@ class Storage:
         user_id: str,
         title: str = "New chat",
         model: str | None = None,
+        project_root: str | None = None,
     ) -> dict[str, Any]:
         session_id = paths.new_id()
         now = _now()
         model = model or settings.MODEL_NAME
+        root = None
+        if project_root:
+            resolved = Path(project_root).expanduser().resolve()
+            if not resolved.exists() or not resolved.is_dir():
+                raise ValueError(f"Invalid project_root: {resolved}")
+            root = str(resolved)
         with self._connect() as conn:
             conn.execute(
                 """
-                INSERT INTO sessions(session_id, user_id, title, model, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO sessions(
+                    session_id, user_id, title, model, project_root, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
-                (session_id, user_id, title, model, now, now),
+                (session_id, user_id, title, model, root, now, now),
             )
         meta = {
             "session_id": session_id,
             "user_id": user_id,
             "title": title,
             "model": model,
+            "project_root": root,
             "created_at": now,
             "updated_at": now,
             "prompt_tokens": 0,
@@ -176,7 +195,7 @@ class Storage:
                 """,
                 (user_id,),
             ).fetchall()
-        return [dict(row) for row in rows]
+        return [self._hydrate_session(dict(row)) for row in rows]
 
     def get_session(self, session_id: str) -> dict[str, Any] | None:
         with self._connect() as conn:
@@ -184,7 +203,68 @@ class Storage:
                 "SELECT * FROM sessions WHERE session_id = ?",
                 (session_id,),
             ).fetchone()
-        return dict(row) if row else None
+        return self._hydrate_session(dict(row)) if row else None
+
+    def _hydrate_session(self, session: dict[str, Any]) -> dict[str, Any]:
+        """Merge meta.json project_root when column is empty (older sessions)."""
+        if session.get("project_root"):
+            return session
+        meta = paths.read_json(
+            paths.meta_path(session["user_id"], session["session_id"]),
+            {},
+        )
+        if meta.get("project_root"):
+            session["project_root"] = meta["project_root"]
+        return session
+
+    def set_project_root(self, session_id: str, user_id: str, project_root: str | None) -> dict[str, Any]:
+        session = self.get_session(session_id)
+        if not session or session["user_id"] != user_id:
+            raise KeyError(f"Session '{session_id}' not found for user.")
+        root = None
+        if project_root:
+            resolved = Path(project_root).expanduser().resolve()
+            if not resolved.exists() or not resolved.is_dir():
+                raise ValueError(f"Invalid project_root: {resolved}")
+            root = str(resolved)
+        now = _now()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE sessions
+                SET project_root = ?, updated_at = ?
+                WHERE session_id = ? AND user_id = ?
+                """,
+                (root, now, session_id, user_id),
+            )
+        meta = paths.read_json(paths.meta_path(user_id, session_id), session)
+        meta["project_root"] = root
+        meta["updated_at"] = now
+        paths.write_json(paths.meta_path(user_id, session_id), meta)
+        self.audit(
+            "session.project_root",
+            {"session_id": session_id, "user_id": user_id, "project_root": root},
+        )
+        updated = self.get_session(session_id)
+        assert updated is not None
+        return updated
+
+    def delete_session(self, session_id: str, user_id: str) -> bool:
+        session = self.get_session(session_id)
+        if not session or session["user_id"] != user_id:
+            return False
+        with self._connect() as conn:
+            conn.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
+            conn.execute("DELETE FROM token_usage WHERE session_id = ?", (session_id,))
+            conn.execute(
+                "DELETE FROM sessions WHERE session_id = ? AND user_id = ?",
+                (session_id, user_id),
+            )
+        session_path = paths.user_dir(user_id) / "sessions" / session_id
+        if session_path.exists():
+            shutil.rmtree(session_path, ignore_errors=True)
+        self.audit("session.deleted", {"session_id": session_id, "user_id": user_id})
+        return True
 
     def touch_session(self, session_id: str, title: str | None = None) -> None:
         now = _now()
@@ -265,6 +345,115 @@ class Storage:
             item["metadata"] = json.loads(item["metadata"] or "{}")
             result.append(item)
         return result
+
+    def update_message_metadata(
+        self,
+        message_id: str,
+        metadata: dict[str, Any],
+    ) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE messages SET metadata = ? WHERE message_id = ?",
+                (json.dumps(metadata), message_id),
+            )
+
+    def _folder_for_kind(self, user_id: str, session_id: str, kind: str) -> Path | None:
+        mapping = {
+            "upload": paths.uploads_path,
+            "uploads": paths.uploads_path,
+            "artifact": paths.artifacts_path,
+            "artifacts": paths.artifacts_path,
+            "workspace": paths.workspace_path,
+        }
+        fn = mapping.get(kind)
+        return fn(user_id, session_id) if fn else None
+
+    def list_user_files(self, user_id: str) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        for session in self.list_sessions(user_id):
+            session_id = session["session_id"]
+            for kind in ("upload", "artifact", "workspace"):
+                folder = self._folder_for_kind(user_id, session_id, kind)
+                if folder is None or not folder.exists():
+                    continue
+                for file_path in folder.iterdir():
+                    if not file_path.is_file():
+                        continue
+                    stat = file_path.stat()
+                    items.append(
+                        {
+                            "session_id": session_id,
+                            "session_title": session["title"],
+                            "kind": kind,
+                            "name": file_path.name,
+                            "size": stat.st_size,
+                            "modified_at": datetime.fromtimestamp(
+                                stat.st_mtime, tz=timezone.utc
+                            ).isoformat(),
+                            "url": f"/sessions/{session_id}/files/{kind}/{file_path.name}",
+                        }
+                    )
+        items.sort(key=lambda row: row["modified_at"], reverse=True)
+        return items
+
+    def delete_session_file(
+        self,
+        *,
+        user_id: str,
+        session_id: str,
+        kind: str,
+        filename: str,
+    ) -> dict[str, Any] | None:
+        session = self.get_session(session_id)
+        if not session or session["user_id"] != user_id:
+            return None
+        name = Path(filename).name
+        folder = self._folder_for_kind(user_id, session_id, kind)
+        if folder is None:
+            return None
+        target = (folder / name).resolve()
+        if not target.is_relative_to(folder.resolve()) or not target.exists():
+            return None
+
+        target.unlink(missing_ok=True)
+        # Uploads are mirrored into workspace — remove the twin if present.
+        if kind in {"upload", "uploads"}:
+            twin = paths.workspace_path(user_id, session_id) / name
+            if twin.exists() and twin.is_file():
+                twin.unlink(missing_ok=True)
+
+        deleted_at = _now()
+        touched = 0
+        for message in self.list_messages(session_id):
+            meta = dict(message.get("metadata") or {})
+            attachments = meta.get("attachments")
+            if not isinstance(attachments, list):
+                continue
+            changed = False
+            for attachment in attachments:
+                if attachment.get("name") != name:
+                    continue
+                attachment["missing"] = True
+                attachment["deleted_at"] = deleted_at
+                changed = True
+            if changed:
+                meta["attachments"] = attachments
+                self.update_message_metadata(message["message_id"], meta)
+                touched += 1
+
+        normalized_kind = {
+            "uploads": "upload",
+            "artifacts": "artifact",
+        }.get(kind, kind)
+        payload = {
+            "session_id": session_id,
+            "kind": normalized_kind,
+            "name": name,
+            "messages_updated": touched,
+            "deleted_at": deleted_at,
+        }
+        self.audit("file.deleted", {"user_id": user_id, **payload})
+        return payload
 
     def record_tokens(
         self,

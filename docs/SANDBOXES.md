@@ -2,19 +2,20 @@
 
 ForgeAI follows the Hermes pattern:
 
-1. **`terminal`** runs shell commands on a backend (`local` or `docker`)
+1. **`terminal`** runs shell commands on a backend (`auto` / `local` / `docker`)
 2. **File edits** use dedicated tools (`read_file`, `write_file`, `patch`) where the LLM supplies content
-3. Workspace is **per session** under `FORGE_HOME/users/<user>/sessions/<id>/workspace`
+3. **Code root** is the session `project_root` when set (opened folder / CLI cwd); otherwise the scratch folder under `FORGE_HOME/users/<user>/sessions/<id>/workspace`
 
 ## Backends
 
 | Backend | Behavior |
 |---------|----------|
-| `local` | Commands run on host inside the session workspace |
-| `docker` | Ephemeral/persistent container with mounted workspace |
+| `auto` (default) | Use Docker when the `docker` CLI is available, else local |
+| `local` | Commands run on host inside the project/workspace root (inherits env) |
+| `docker` | Ephemeral `docker run --rm` with project/workspace mounted at `/workspace` |
 
 ```env
-SANDBOX_BACKEND=local
+SANDBOX_BACKEND=auto
 SANDBOX_FOR_TERMINAL=true
 ```
 

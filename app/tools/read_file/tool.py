@@ -7,9 +7,35 @@ from app.tools.workspace_paths import resolve_in_workspace
 
 manifest = ToolManifest(
     name="read_file",
-    description="Read a text file from the session workspace. Prefer this over cat/type in terminal.",
+    description=(
+        "Read a text file from the project/workspace root. "
+        "Prefer this over cat/type in terminal. Returns numbered lines."
+    ),
     keywords=["read", "file", "open", "cat"],
     permissions=["read_file"],
+    parameters={
+        "type": "object",
+        "properties": {
+            "path": {
+                "type": "string",
+                "description": "Relative path from project root, e.g. README.md or src/app.py",
+            },
+            "offset": {
+                "type": "integer",
+                "description": "1-based line number to start reading (default 1)",
+                "default": 1,
+                "minimum": 1,
+            },
+            "limit": {
+                "type": "integer",
+                "description": "Max number of lines to return (default 400)",
+                "default": 400,
+                "minimum": 1,
+            },
+        },
+        "required": ["path"],
+        "additionalProperties": False,
+    },
 )
 
 

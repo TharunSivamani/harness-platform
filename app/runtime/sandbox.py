@@ -30,12 +30,24 @@ class SandboxManager:
     Ephemeral execution sandbox.
 
     Backends:
-    - local: subprocess with timeout
+    - auto: docker when the CLI is available, else local
+    - local: subprocess with timeout (host env, project/workdir cwd)
     - docker: containerized run when Docker is available
     """
 
     def __init__(self):
         self._active: dict[str, dict[str, Any]] = {}
+
+    def resolve_backend(self) -> str:
+        configured = (settings.SANDBOX_BACKEND or "auto").lower().strip()
+        if configured == "auto":
+            return "docker" if shutil.which("docker") else "local"
+        if configured == "docker":
+            return "docker"
+        return "local"
+
+    def docker_available(self) -> bool:
+        return shutil.which("docker") is not None
 
     async def execute(
         self,
@@ -52,15 +64,17 @@ class SandboxManager:
         network = settings.SANDBOX_NETWORK if network is None else network
         workdir = Path(workdir or tempfile.mkdtemp(prefix="forge-sandbox-"))
         workdir.mkdir(parents=True, exist_ok=True)
+        backend = self.resolve_backend()
 
         self._active[sandbox_id] = {
             "started": time.time(),
             "workdir": str(workdir),
-            "backend": settings.SANDBOX_BACKEND,
+            "backend": backend,
+            "configured": settings.SANDBOX_BACKEND,
         }
 
         try:
-            if settings.SANDBOX_BACKEND == "docker":
+            if backend == "docker":
                 return await self._execute_docker(
                     sandbox_id=sandbox_id,
                     command=command,
@@ -130,7 +144,11 @@ class SandboxManager:
             exit_code=process.returncode or 0,
             execution_time=time.perf_counter() - start,
             sandbox_id=sandbox_id,
-            metadata={"backend": "local", "cpu_limit": settings.SANDBOX_CPU_LIMIT},
+            metadata={
+                "backend": "local",
+                "workdir": str(workdir),
+                "cpu_limit": settings.SANDBOX_CPU_LIMIT,
+            },
         )
 
     async def _execute_docker(
@@ -208,6 +226,7 @@ class SandboxManager:
                 "backend": "docker",
                 "image": settings.DOCKER_IMAGE,
                 "memory_mb": settings.SANDBOX_MEMORY_MB,
+                "workdir": str(workdir),
             },
         )
 

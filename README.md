@@ -10,39 +10,49 @@ Autonomy is not a separate product endpoint: every chat turn asks the LLM what t
 pip install -r requirements.txt
 pip install -e .
 
-# API
-uvicorn app.main:app --reload --port 8000
+# Launch API + Web UI together (opens browser)
+forgeai ui
+# aliases: forge ui · forge --webui · forgeai --webui
 
-# UI
+# Or run separately:
+uvicorn app.main:app --reload --port 8000
 cd frontend && npm install && npm run dev
 
-# CLI
+# CLI — LLM profiles live under FORGE_HOME (not one-shot env exports)
+forge setup
+forge profile list
+forge profile use ollama-local
+
+# CLI — operates on your current directory as the project root
+cd /path/to/your/app
 forge tools
-forge chat "calculate 2+2"
+forge chat "list the files in this project"
+forge chat --profile ollama-local --project C:\path\to\app "summarize README"
 forge            # interactive REPL
 ```
 
-- UI: http://localhost:3000
+- UI: http://localhost:3000 — **LLM profiles** page (same store as `forge setup`); open a folder so tools edit that tree
 - API docs: http://127.0.0.1:8000/docs
-- Data root: `./data` (`FORGE_HOME`)
+- Chat memory + LLM profiles: `./data` (`FORGE_HOME`); code root: session `project_root` / CLI cwd
 
 ## Product model
 
 | Surface | Behavior |
 |---------|----------|
-| Web chat | Sidebar sessions, uploads, inline tool steps, token stats |
-| `forge` CLI | Same chat loop + autodiscovered tools |
+| Web UI (`forgeai ui`) | Chat, LLM profiles setup, project folder, file tree, uploads, streaming |
+| `forge` / `forgeai` CLI | Same chat loop + profile store; default project = cwd |
 | Tools | Autodiscovered packages under `app/tools/` |
+| Sandbox | `SANDBOX_BACKEND=auto` → Docker if available, else local host env |
 
 ### Hermes-style tools
 
-- `terminal` — shell in session workspace (local/docker sandbox backend)
+- `terminal` — shell in project root (local/docker sandbox backend)
 - `read_file` / `write_file` / `patch` — LLM supplies edits (prefer over shell heredocs)
 - plus calculator, python, search, browser, filesystem
 
 ### Portable state
 
-All chats/prompts/files/tokens live under `FORGE_HOME`. Copy the folder to migrate. See [docs/DATA.md](docs/DATA.md).
+Chats/prompts/tokens live under `FORGE_HOME`. The **project root** is separate: the folder you open in the UI or launch `forge` from. See [docs/DATA.md](docs/DATA.md) and [docs/SANDBOXES.md](docs/SANDBOXES.md).
 
 ### Soft users / RBAC
 
@@ -59,12 +69,20 @@ Per message usage is recorded when the LLM returns usage; rollups available at:
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| `POST` | `/sessions` | Create chat session |
-| `GET` | `/sessions` | List sessions |
+| `POST` | `/sessions` | Create session (`project_root` optional) |
+| `PUT` | `/sessions/{id}/project` | Bind session to a folder |
+| `GET` | `/sessions/{id}/project/tree` | List project files |
 | `POST` | `/sessions/{id}/chat` | Chat turn (LLM tool loop until final) |
 | `GET` | `/sessions/{id}/stream` | SSE tool/chat events |
 | `POST` | `/sessions/{id}/upload` | Upload file/image into session |
 | `GET` | `/sessions/{id}/files` | List uploads/workspace/artifacts |
+| `GET` | `/llm/profiles` | List profiles + active/resolved |
+| `POST` | `/llm/profiles` | Create/update profile |
+| `POST` | `/llm/profiles/{name}/activate` | Set active profile |
+| `DELETE` | `/llm/profiles/{name}` | Delete profile |
+| `GET` | `/llm/providers` | Supported providers + default base URLs |
+| `POST` | `/llm/models` | Autofetch models for provider/profile |
+| `GET` | `/sandbox/status` | Effective sandbox backend |
 | `GET` | `/stats/me` | User token stats |
 | `GET` | `/tools` | Autodiscovered tools |
 

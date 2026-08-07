@@ -6,7 +6,7 @@ from app.tools.base import BaseTool
 
 manifest = ToolManifest(
     name="calculator",
-    description="Performs mathematical calculations.",
+    description="Evaluate a math expression and return the numeric result (e.g. 2+2, 3*7, (10-3)/2).",
     keywords=[
         "calculate",
         "math",
@@ -18,6 +18,17 @@ manifest = ToolManifest(
         "expression",
     ],
     permissions=["calculator.execute"],
+    parameters={
+        "type": "object",
+        "properties": {
+            "expression": {
+                "type": "string",
+                "description": "Arithmetic expression to evaluate",
+            },
+        },
+        "required": ["expression"],
+        "additionalProperties": False,
+    },
 )
 
 

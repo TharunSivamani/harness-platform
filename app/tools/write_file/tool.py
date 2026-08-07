@@ -7,9 +7,27 @@ from app.tools.workspace_paths import resolve_in_workspace
 
 manifest = ToolManifest(
     name="write_file",
-    description="Write full file content in the session workspace. Prefer this over echo/heredoc in terminal.",
+    description=(
+        "Create or overwrite a file with full content under the project/workspace root. "
+        "Prefer this over echo/heredoc in terminal. Creates parent directories as needed."
+    ),
     keywords=["write", "save", "create file", "edit"],
     permissions=["write_file"],
+    parameters={
+        "type": "object",
+        "properties": {
+            "path": {
+                "type": "string",
+                "description": "Relative path from project root for the file to write",
+            },
+            "content": {
+                "type": "string",
+                "description": "Full file contents to write (UTF-8 text)",
+            },
+        },
+        "required": ["path", "content"],
+        "additionalProperties": False,
+    },
 )
 
 
