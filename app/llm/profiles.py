@@ -335,11 +335,11 @@ def resolve_llm_config(profile_name: str | None = None) -> ResolvedLLMConfig:
         base_url = profile.base_url or default_base_url(provider)
         api_key = profile.api_key
         if provider == "openai" and not api_key:
-            api_key = settings.OPENAI_API_KEY
+            api_key = settings.get_openai_api_key()
         if provider == "anthropic" and not api_key:
-            api_key = settings.ANTHROPIC_API_KEY
+            api_key = settings.get_anthropic_api_key()
         if provider in {"vllm", "openai_compatible", "litellm"} and not api_key:
-            api_key = settings.OPENAI_API_KEY or "EMPTY"
+            api_key = settings.get_openai_api_key() or "EMPTY"
         model = profile.model or settings.MODEL_NAME
         return ResolvedLLMConfig(
             provider=provider,
@@ -354,11 +354,11 @@ def resolve_llm_config(profile_name: str | None = None) -> ResolvedLLMConfig:
     base_url = default_base_url(provider)
     api_key = None
     if provider == "openai":
-        api_key = settings.OPENAI_API_KEY
+        api_key = settings.get_openai_api_key()
     elif provider == "anthropic":
-        api_key = settings.ANTHROPIC_API_KEY
+        api_key = settings.get_anthropic_api_key()
     elif provider == "vllm":
-        api_key = settings.OPENAI_API_KEY or "EMPTY"
+        api_key = settings.get_openai_api_key() or "EMPTY"
     return ResolvedLLMConfig(
         provider=provider,
         model=settings.MODEL_NAME,

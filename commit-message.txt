@@ -1,0 +1,33 @@
+Security hardening and architecture improvements
+
+CRITICAL SECURITY FIXES:
+
+- Fix RCE vulnerability in calculator tool: replaced eval() with AST-based RestrictedMathEvaluator
+- Fix terminal allowlist bypass: validate full command for shell metacharacters, use subprocess_exec instead of shell
+- Fix sandbox silent downgrade: SANDBOX_BACKEND=docker now fails loudly if Docker unavailable
+
+HIGH PRIORITY FIXES:
+
+- Fix async race condition: replaced module globals in context.py with contextvars for coroutine-local storage
+- Fix AnthropicProvider: added proper chat() with full tool-calling support via Messages API
+
+MEDIUM PRIORITY IMPROVEMENTS:
+
+- Add bounded history to EventBus (default 10k events) to prevent memory leaks
+- Add bounded timing samples to MetricsRegistry (default 10k per metric)
+- Add log rotation to ExecutionRecorder (10MB max, 5 backups)
+- Fix pyproject.toml: add playwright dependency, add pytest config, add ruff config
+
+LOW PRIORITY IMPROVEMENTS:
+
+- Type API keys as SecretStr in Settings to prevent accidental logging
+- Update docs/SANDBOXES.md with Docker requirements and strict mode behavior
+- Update docs/DATA.md to reflect secrets.json separation from profiles.json
+
+TESTING:
+
+- Add pytest test suite in tests/ directory
+- Add security tests for calculator, terminal, context isolation
+- Add tests for sandbox strictness and bounded structures
+
+Version bump: 0.2.0 -> 0.2.1

@@ -1,11 +1,19 @@
+"""
+Application configuration with secure secret handling.
+
+FIX: API keys are now typed as SecretStr to prevent accidental logging/exposure.
+Use .get_secret_value() when you need the actual string value.
+"""
+
 from pathlib import Path
 
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
     APP_NAME: str = "ForgeAI"
-    APP_VERSION: str = "0.2.0"
+    APP_VERSION: str = "0.2.1"
 
     HOST: str = "0.0.0.0"
     PORT: int = 8000
@@ -17,7 +25,11 @@ class Settings(BaseSettings):
     DEFAULT_USER_NAME: str = "Local User"
     DEFAULT_ROLE: str = "owner"
 
-    OPENAI_API_KEY: str | None = None
+    # API Keys - typed as SecretStr to prevent accidental logging
+    OPENAI_API_KEY: SecretStr | None = None
+    ANTHROPIC_API_KEY: SecretStr | None = None
+    API_KEY: SecretStr | None = None  # Server API key for auth
+    
     MODEL_NAME: str = "qwen3-vl:2b-thinking"
 
     TERMINAL_TIMEOUT_SECONDS: int = 30
@@ -32,7 +44,6 @@ class Settings(BaseSettings):
     LLM_PROVIDER: str = "ollama"
     LLM_FALLBACK_PROVIDERS: str = ""
     PLANNER_MODE: str = "auto"
-    ANTHROPIC_API_KEY: str | None = None
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     OLLAMA_THINK: bool = True
     VLLM_BASE_URL: str = "http://localhost:8001/v1"
@@ -49,7 +60,6 @@ class Settings(BaseSettings):
     # Optional default project when CLI/API omit an explicit path (empty = none).
     DEFAULT_PROJECT_ROOT: str | None = None
 
-    API_KEY: str | None = None
     MAX_WORKSPACE_BYTES: int = 100 * 1024 * 1024
     TASK_WORKERS: int = 2
     CORS_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000"
@@ -60,6 +70,19 @@ class Settings(BaseSettings):
 
     class Config:
         env_file = ".env"
+    
+    # Helper methods to safely get secret values
+    def get_openai_api_key(self) -> str | None:
+        """Get OpenAI API key value, or None if not set."""
+        return self.OPENAI_API_KEY.get_secret_value() if self.OPENAI_API_KEY else None
+    
+    def get_anthropic_api_key(self) -> str | None:
+        """Get Anthropic API key value, or None if not set."""
+        return self.ANTHROPIC_API_KEY.get_secret_value() if self.ANTHROPIC_API_KEY else None
+    
+    def get_api_key(self) -> str | None:
+        """Get server API key value, or None if not set."""
+        return self.API_KEY.get_secret_value() if self.API_KEY else None
 
     @property
     def forge_home(self) -> Path:

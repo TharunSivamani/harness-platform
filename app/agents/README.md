@@ -9,7 +9,7 @@ Agents decide *what* should happen. They never import concrete tools directly fo
 | `base.py` | Abstract `BaseAgent` with `async run(user_input) -> ToolResult` |
 | `planner.py` | Main planner: LLM router (auto) or keyword selector + argument building |
 | `runner.py` | Legacy multi-step harness (prefer `chat_loop`) |
-| `chat_loop.py` | **Product autonomy**: LLM decides tools until final answer |
+| `chat_loop.py` | **Product autonomy**: LLM decides tools until final answer (async-safe context) |
 | `research.py` | Research-focused agent (prefers search) |
 | `coding.py` | Coding-focused agent (python/filesystem) |
 | `reviewer.py` | Lightweight result review/approval notes |

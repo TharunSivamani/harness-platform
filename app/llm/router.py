@@ -51,9 +51,9 @@ class LLMRouter:
                     continue
                 usable.append(name)
                 continue
-            if name == "openai" and not settings.OPENAI_API_KEY:
+            if name == "openai" and not settings.get_openai_api_key():
                 continue
-            if name == "anthropic" and not settings.ANTHROPIC_API_KEY:
+            if name == "anthropic" and not settings.get_anthropic_api_key():
                 continue
             usable.append(name)
         return usable or [primary]
@@ -95,9 +95,9 @@ class LLMRouter:
 
                     fallback_key = None
                     if provider_name in {"openai", "vllm", "openai_compatible", "litellm"}:
-                        fallback_key = settings.OPENAI_API_KEY
+                        fallback_key = settings.get_openai_api_key()
                     elif provider_name == "anthropic":
-                        fallback_key = settings.ANTHROPIC_API_KEY
+                        fallback_key = settings.get_anthropic_api_key()
                     if provider_name in {"vllm", "openai_compatible", "litellm"}:
                         fallback_key = fallback_key or "EMPTY"
 

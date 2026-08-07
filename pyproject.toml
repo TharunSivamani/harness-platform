@@ -4,20 +4,28 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "forgeai"
-version = "0.2.0"
+version = "0.2.1"
 description = "Portable ChatGPT-style agent operating system"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-  "fastapi",
-  "uvicorn",
-  "pydantic",
-  "pydantic-settings",
-  "httpx",
-  "openai",
-  "python-multipart",
-  "python-dotenv",
+  "fastapi>=0.100.0",
+  "uvicorn>=0.20.0",
+  "pydantic>=2.0.0",
+  "pydantic-settings>=2.0.0",
+  "httpx>=0.24.0",
+  "openai>=1.0.0",
+  "python-multipart>=0.0.6",
+  "python-dotenv>=1.0.0",
   "prompt_toolkit>=3.0.36",
+  "playwright>=1.40.0",  # Required for browser tool
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=7.0.0",
+  "pytest-asyncio>=0.21.0",
+  "ruff>=0.1.0",
 ]
 
 [project.scripts]
@@ -26,3 +34,32 @@ forgeai = "app.cli.main:main"
 
 [tool.setuptools.packages.find]
 include = ["app*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+  "E",     # pycodestyle errors
+  "W",     # pycodestyle warnings
+  "F",     # pyflakes
+  "I",     # isort
+  "B",     # flake8-bugbear
+  "C4",    # flake8-comprehensions
+  "UP",    # pyupgrade
+  "ARG",   # flake8-unused-arguments
+  "SIM",   # flake8-simplify
+]
+ignore = [
+  "E501",  # line too long (handled by formatter)
+  "B008",  # function call in default argument (FastAPI Depends pattern)
+  "B905",  # zip without strict (Python 3.10+)
+]

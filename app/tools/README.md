@@ -10,6 +10,30 @@ Plugin tool ecosystem. Each **subpackage** exports `tool = SomeTool()` and is au
 | `registry.py` | In-memory tool registry + manifest discovery |
 | `loader.py` | Package discovery / idempotent `load_plugins()` |
 | `selector.py` | Keyword scoring tool selector |
+| `context.py` | Session context using `contextvars` for async safety |
+
+## Session Context
+
+Tools access the current user/session via `contextvars`-based context (async-safe):
+
+```python
+from app.tools.context import (
+    session_context_scope,
+    current_user_id,
+    current_session_id,
+    current_project_root,
+)
+
+# In chat loop (automatic):
+async with session_context_scope(user_id, session_id, project_root):
+    result = await tool.execute(...)
+    
+# In tool implementation:
+def get_workspace():
+    return Path(current_project_root() or "/tmp")
+```
+
+This ensures concurrent async requests are isolated — one user's context never leaks to another.
 
 ## Plugin contract
 

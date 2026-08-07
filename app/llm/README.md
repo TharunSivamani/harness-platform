@@ -5,13 +5,30 @@ Provider-agnostic chat/completions with failover via `LLMRouter`, plus persisten
 | File | Role |
 |------|------|
 | `base.py` | `BaseLLM` + `LLMResponse` (`content`, `thinking`, tool calls, tokens) |
-| `profiles.py` | Named profiles, active selection, model autofetch |
+| `profiles.py` | Named profiles, active selection, model autofetch, secrets separation |
 | `factory.py` | Provider factory from resolved profile/env |
 | `router.py` | Primary + fallback routing |
-| `openai_provider.py` | OpenAI / OpenAI-compatible Chat Completions |
-| `anthropic_provider.py` | Anthropic Messages |
+| `openai_provider.py` | OpenAI / OpenAI-compatible Chat Completions with tool calling |
+| `anthropic_provider.py` | Anthropic Messages API with full tool-use support |
 | `ollama_provider.py` | Local Ollama `/api/chat` (tools + thinking models) |
 | `vllm_provider.py` | OpenAI-compatible vLLM |
+
+## Provider Features
+
+| Provider | Tool Calling | Streaming | Image Support |
+|----------|-------------|-----------|---------------|
+| OpenAI | ✅ Native | ✅ | ✅ |
+| Anthropic | ✅ Native (tool_use) | ✅ | ✅ |
+| Ollama | ✅ Native | ✅ | ✅ |
+| vLLM | ✅ (via OpenAI compat) | ✅ | Depends |
+
+## Secrets Storage
+
+API keys are stored separately from profiles for security:
+- `profiles.json` — Profile metadata (no secrets)
+- `secrets.json` — API keys only (chmod 0600)
+
+Legacy inline keys are auto-migrated on first load.
 
 ## Profiles (preferred)
 

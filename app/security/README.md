@@ -8,6 +8,20 @@ Authentication and role resolution for API requests.
 |------|---------|
 | `auth.py` | Optional `X-API-Key` gate + `X-Forge-Role` role header helper |
 
+## Security Features
+
+- **API Key Protection**: Server API key typed as `SecretStr` to prevent accidental logging
+- **Role-based Access**: Roles map to tool permissions
+- **Header-based Auth**: Simple `X-API-Key` and `X-Forge-Role` headers
+
+## Configuration
+
+```env
+API_KEY=your-secret-key  # Enables API key requirement
+```
+
+When `API_KEY` is set, all requests must include the `X-API-Key` header.
+
 ## Examples
 
 ```bash

@@ -377,17 +377,15 @@ class ChatLoop:
                             for key, value in arguments.items()
                             if not key.startswith("_")
                         }
-                        from app.tools import context as tool_context
+                        from app.tools.context import session_context_scope
 
-                        tool_context.set_session(
-                            user_id,
-                            session_id,
+                        # Use context manager for proper async-safe context isolation
+                        async with session_context_scope(
+                            user_id=user_id,
+                            session_id=session_id,
                             project_root=session.get("project_root"),
-                        )
-                        try:
+                        ):
                             result = await self.kernel.execute(tool_name, **exec_kwargs)
-                        finally:
-                            tool_context.clear_session()
 
                         result_payload = result.model_dump()
                         storage.add_message(

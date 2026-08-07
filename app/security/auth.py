@@ -9,9 +9,10 @@ async def require_api_key(x_api_key: str | None = Header(default=None)) -> None:
     """
     Optional API key gate. Disabled when settings.API_KEY is unset.
     """
-    if not settings.API_KEY:
+    expected_key = settings.get_api_key()
+    if not expected_key:
         return
-    if x_api_key != settings.API_KEY:
+    if x_api_key != expected_key:
         raise HTTPException(status_code=401, detail="Invalid or missing API key.")
 
 

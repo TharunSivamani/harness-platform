@@ -76,7 +76,7 @@ class OpenAIProvider(BaseLLM):
         base_url: str | None = None,
     ):
         self.model = model or settings.MODEL_NAME
-        self.api_key = api_key if api_key is not None else settings.OPENAI_API_KEY
+        self.api_key = api_key if api_key is not None else settings.get_openai_api_key()
         self.base_url = base_url
         if not self.api_key and self.base_url is not None:
             self.api_key = "EMPTY"
