@@ -83,7 +83,9 @@ class LLMRouter:
                         "provider": provider_name,
                         "profile": resolved.profile_name,
                         "model": resolved.model if provider_name == resolved.provider else None,
-                        "base_url": resolved.base_url if provider_name == resolved.provider else None,
+                        "base_url": resolved.base_url
+                        if provider_name == resolved.provider
+                        else None,
                     },
                 )
                 if provider_name == resolved.provider:

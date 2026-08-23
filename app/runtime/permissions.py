@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-
 ROLE_PERMISSIONS: dict[str, set[str]] = {
     "viewer": {
         "filesystem.read",

@@ -18,7 +18,6 @@ from app.storage.db import storage
 from app.storage.paths import paths
 from app.tools.loader import load_plugins, registry
 
-
 SYSTEM_PROMPT = """You are ForgeAI, a coding and operations agent with tools.
 
 When a project folder is open, file/terminal/python tools run inside that project root.
@@ -153,9 +152,7 @@ class ChatLoop:
                             encoded = self._image_b64(
                                 str(paths.uploads_path(user_id, session_id) / attachment["name"])
                             )
-                            path = str(
-                                paths.uploads_path(user_id, session_id) / attachment["name"]
-                            )
+                            path = str(paths.uploads_path(user_id, session_id) / attachment["name"])
                         if encoded:
                             mime = attachment.get("mime") or mimetypes.guess_type(path)[0]
                             if not mime or not str(mime).startswith("image/"):

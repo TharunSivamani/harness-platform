@@ -12,7 +12,6 @@ from threading import Lock
 from time import time
 from typing import Any
 
-
 # Default maximum timing samples to retain per metric
 DEFAULT_MAX_TIMING_SAMPLES = 10_000
 
@@ -20,7 +19,7 @@ DEFAULT_MAX_TIMING_SAMPLES = 10_000
 class MetricsRegistry:
     """
     Lightweight in-process metrics for latency, counters, and token/cost tracking.
-    
+
     Features:
     - Bounded timing samples with automatic eviction (default 10,000 per metric)
     - Thread-safe operations
@@ -30,7 +29,7 @@ class MetricsRegistry:
     def __init__(self, max_timing_samples: int = DEFAULT_MAX_TIMING_SAMPLES):
         """
         Initialize the metrics registry.
-        
+
         Args:
             max_timing_samples: Maximum timing samples to retain per metric.
                                Older samples are evicted when limit is reached.
@@ -63,7 +62,7 @@ class MetricsRegistry:
             # Add to bounded sample buffer
             samples = self._get_timing_deque(name)
             samples.append(value)
-            
+
             # Update running statistics
             stats = self._timing_stats[name]
             stats["count"] += 1
@@ -74,7 +73,7 @@ class MetricsRegistry:
     def snapshot(self) -> dict[str, Any]:
         """
         Get a snapshot of all metrics.
-        
+
         Returns dict with:
         - uptime_seconds: Time since registry creation
         - counters: All counter values
@@ -92,7 +91,9 @@ class MetricsRegistry:
                     "count": running["count"],  # Total ever observed
                     "samples_retained": len(sample_list),
                     "avg": sum(sample_list) / len(sample_list),  # Avg of retained samples
-                    "avg_all_time": running["sum"] / running["count"] if running["count"] > 0 else 0,
+                    "avg_all_time": running["sum"] / running["count"]
+                    if running["count"] > 0
+                    else 0,
                     "max": running["max"],  # All-time max
                     "min": running["min"] if running["min"] != float("inf") else 0,  # All-time min
                     "max_retained": max(sample_list),  # Max of retained samples

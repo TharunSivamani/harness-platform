@@ -187,6 +187,7 @@ async def browse_folder(user_id: str = Depends(resolve_user_id)):
     Open a native OS folder picker on the machine running the API.
     Returns the absolute path, or cancelled=true if the user dismissed the dialog.
     """
+
     def _pick() -> str | None:
         try:
             import tkinter as tk

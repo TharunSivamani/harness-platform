@@ -1,8 +1,13 @@
 # ForgeAI
 
+[![CI](https://github.com/TharunSivamani/harness-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/TharunSivamani/harness-platform/actions/workflows/ci.yml)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](pyproject.toml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Version](https://img.shields.io/badge/version-0.3.0-blue)](app/__version__.py)
+
 Portable **ChatGPT-style agent workspace** with a Hermes-inspired tool runtime.
 
-**Version:** 0.2.1
+**Version:** 0.3.0
 
 Autonomy is not a separate product endpoint: every chat turn asks the LLM what to do next. If it wants tools, it runs them; if it is done, it answers.
 
@@ -14,32 +19,39 @@ Autonomy is not a separate product endpoint: every chat turn asks the LLM what t
 - **Async-safe context**: Session isolation using `contextvars` for concurrent requests
 - **Secret protection**: API keys typed as `SecretStr` to prevent accidental logging
 
-## Quick start
+## Quick start (uv — canonical)
 
 ```bash
-pip install -r requirements.txt
-pip install -e .
+# 1. Install (uv only — no bare pip)
+uv sync --all-extras
+cp .env.example .env   # fill secrets
 
-# Launch API + Web UI together (opens browser)
-forgeai ui
+# 2. Verify
+make check             # ruff + pytest
+# or: uv run pytest -q && uv run ruff check .
+
+# 3. Launch API + Web UI together (opens browser)
+uv run forgeai ui
 # aliases: forge ui · forge --webui · forgeai --webui
 
 # Or run separately:
-uvicorn app.main:app --reload --port 8000
+uv run uvicorn app.main:app --reload --port 8000
 cd frontend && npm install && npm run dev
 
 # CLI — LLM profiles live under FORGE_HOME (not one-shot env exports)
-forge setup
-forge profile list
-forge profile use ollama-local
+uv run forge setup
+uv run forge profile list
+uv run forge profile use ollama-local
 
 # CLI — operates on your current directory as the project root
 cd /path/to/your/app
-forge tools
-forge chat "list the files in this project"
-forge chat --profile ollama-local --project C:\path\to\app "summarize README"
-forge            # interactive REPL
+uv run forge tools
+uv run forge chat "list the files in this project"
+uv run forge chat --profile ollama-local --project C:\path\to\app "summarize README"
+uv run forge            # interactive REPL
 ```
+
+> Legacy pip still works (`pip install -e .`) but `uv` is canonical — see `CONTRIBUTING.md`.
 
 - UI: http://localhost:3000 — **LLM profiles** page (same store as `forge setup`); open a folder so tools edit that tree
 - API docs: http://127.0.0.1:8000/docs
@@ -100,21 +112,38 @@ Per message usage is recorded when the LLM returns usage; rollups available at:
 ## Testing
 
 ```bash
-# Install dev dependencies
-pip install -e ".[dev]"
-
-# Run test suite
-pytest tests/
-
-# Run with coverage
-pytest tests/ --cov=app
+uv sync --all-extras
+make check              # lint + format check + pytest
+uv run pytest tests/ -q
+uv run pytest tests/ --cov=app --cov-report=term-missing
 ```
 
-Tests cover security features (calculator AST, terminal injection, context isolation, sandbox strictness) and bounded data structures.
+Manual smoke demos (not CI) live in `examples/`:
+
+```bash
+uv run python examples/kernel_demo.py
+uv run python examples/runtime_demo.py
+```
+
+Tests cover security features (calculator AST, terminal injection, context isolation, sandbox strictness) and bounded data structures. See `tests/` and `CONTRIBUTING.md`.
 
 ## Docs
 
+- [ARCHITECTURE.md](docs/ARCHITECTURE.md) — system diagram + request flows
+- [PLUGIN_SDK.md](docs/PLUGIN_SDK.md) — authoring a tool
 - [DATA.md](docs/DATA.md) — portable home layout, secrets storage
 - [SANDBOXES.md](docs/SANDBOXES.md) — terminal backends, Docker requirements
 - [AUTONOMOUS.md](docs/AUTONOMOUS.md) — historical note; product path is chat loop
+- [CONTRIBUTING.md](CONTRIBUTING.md) — branching, commits, adding tools
+- [SECURITY.md](SECURITY.md) — reporting + hardening
+- [CHANGELOG.md](CHANGELOG.md) — version history
 - Folder READMEs under `app/` and `frontend/`
+- OpenAPI: `make openapi` → `openapi.json` (also `/docs`)
+
+## Versioning
+
+Single source `app/__version__.py` (`0.3.0`). Bump via `make bump V=0.3.1` or `uv run python scripts/bump_version.py 0.3.1` — never hand-edit 4 files.
+
+## License
+
+MIT — see [LICENSE](LICENSE). If you use this in research, cite via [CITATION.cff](CITATION.cff).

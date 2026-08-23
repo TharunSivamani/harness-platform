@@ -4,7 +4,7 @@ import asyncio
 import json
 import re
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
@@ -29,9 +29,7 @@ class AgentStep:
     arguments: dict[str, Any] = field(default_factory=dict)
     result: dict[str, Any] | None = None
     status: str = "pending"
-    created_at: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
-    )
+    created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
 
 @dataclass
@@ -44,12 +42,8 @@ class AgentRun:
     steps: list[AgentStep] = field(default_factory=list)
     final_output: Any = None
     error: str | None = None
-    created_at: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
-    )
-    updated_at: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
-    )
+    created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
+    updated_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
 
 class AgentRunner:
@@ -96,7 +90,7 @@ class AgentRunner:
             event.set()
             run = self.get(run_id)
             run.status = "running"
-            run.updated_at = datetime.now(timezone.utc).isoformat()
+            run.updated_at = datetime.now(UTC).isoformat()
             await self._emit(run_id, "RunApproved", {})
 
     async def start(
@@ -133,9 +127,7 @@ class AgentRunner:
                 max_steps=max_steps or settings.AGENT_MAX_STEPS,
                 role=role or settings.DEFAULT_ROLE,
                 auto_approve=(
-                    settings.AGENT_AUTO_APPROVE
-                    if auto_approve is None
-                    else auto_approve
+                    settings.AGENT_AUTO_APPROVE if auto_approve is None else auto_approve
                 ),
             )
         )
@@ -165,7 +157,7 @@ class AgentRunner:
                     status="planned",
                 )
                 run.steps.append(step)
-                run.updated_at = datetime.now(timezone.utc).isoformat()
+                run.updated_at = datetime.now(UTC).isoformat()
 
                 await self._emit(
                     run.run_id,
@@ -201,10 +193,7 @@ class AgentRunner:
                         )
                     return
 
-                if (
-                    not auto_approve
-                    and step.tool in settings.agent_approval_tools
-                ):
+                if not auto_approve and step.tool in settings.agent_approval_tools:
                     step.status = "awaiting_approval"
                     run.status = "awaiting_approval"
                     state_machine.transition(task_id, TaskState.WAITING)
@@ -234,7 +223,7 @@ class AgentRunner:
                 )
                 step.result = result.model_dump()
                 step.status = "completed" if result.success else "failed"
-                run.updated_at = datetime.now(timezone.utc).isoformat()
+                run.updated_at = datetime.now(UTC).isoformat()
 
                 await self._emit(
                     run.run_id,
@@ -326,8 +315,7 @@ class AgentRunner:
     ) -> dict[str, Any]:
         tools = registry.discover()
         tool_lines = [
-            f"- {item.name}: {item.description} | perms={item.permissions}"
-            for item in tools
+            f"- {item.name}: {item.description} | perms={item.permissions}" for item in tools
         ]
         system = (
             "You are ForgeAI's autonomous agent controller. "
@@ -387,25 +375,25 @@ class AgentRunner:
         if tool_name == "calculator":
             for prefix in ("calculate", "compute", "math"):
                 if lowered.startswith(prefix):
-                    return {"expression": text[len(prefix):].strip(" :")}
+                    return {"expression": text[len(prefix) :].strip(" :")}
             return {"expression": text}
 
         if tool_name == "python":
             for prefix in ("run python", "python"):
                 if lowered.startswith(prefix):
-                    return {"code": text[len(prefix):].strip(" :")}
+                    return {"code": text[len(prefix) :].strip(" :")}
             return {"code": text}
 
         if tool_name == "terminal":
             for prefix in ("run", "terminal", "shell"):
                 if lowered.startswith(prefix):
-                    return {"command": text[len(prefix):].strip(" :")}
+                    return {"command": text[len(prefix) :].strip(" :")}
             return {"command": text}
 
         if tool_name == "search":
             for prefix in ("search for", "search", "research"):
                 if lowered.startswith(prefix):
-                    return {"query": text[len(prefix):].strip(" :"), "max_results": 3}
+                    return {"query": text[len(prefix) :].strip(" :"), "max_results": 3}
             return {"query": text, "max_results": 3}
 
         if tool_name == "filesystem":

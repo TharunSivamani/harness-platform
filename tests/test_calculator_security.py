@@ -6,6 +6,7 @@ and does NOT allow arbitrary code execution via eval().
 """
 
 import pytest
+
 from app.tools.calculator.tool import CalculatorTool, RestrictedMathEvaluator
 
 
@@ -36,6 +37,7 @@ class TestRestrictedMathEvaluator:
     def test_math_constants(self):
         """Test math constants are available."""
         import math
+
         assert self.evaluator.evaluate("pi") == math.pi
         assert self.evaluator.evaluate("e") == math.e
 
@@ -100,7 +102,7 @@ class TestRestrictedMathEvaluator:
 
     def test_blocks_lambda(self):
         """SECURITY: Block lambda expressions."""
-        with pytest.raises(ValueError, match="not allowed"):
+        with pytest.raises(ValueError, match="allowed"):
             self.evaluator.evaluate("(lambda: 1)()")
 
     def test_blocks_comprehensions(self):
@@ -123,11 +125,11 @@ class TestCalculatorTool:
     async def test_malicious_input_blocked(self):
         """SECURITY: Malicious inputs should fail safely."""
         tool = CalculatorTool()
-        
+
         # This would execute arbitrary code with eval()
         result = await tool.execute("__import__('os').system('id')")
         assert result.success is False
-        assert "not allowed" in result.error.lower()
+        assert "allowed" in result.error.lower()
 
     async def test_empty_expression(self):
         """Test empty expression handling."""

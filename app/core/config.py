@@ -10,10 +10,12 @@ from pathlib import Path
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings
 
+from app.__version__ import __version__
+
 
 class Settings(BaseSettings):
     APP_NAME: str = "ForgeAI"
-    APP_VERSION: str = "0.2.1"
+    APP_VERSION: str = __version__
 
     HOST: str = "0.0.0.0"
     PORT: int = 8000
@@ -29,7 +31,7 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: SecretStr | None = None
     ANTHROPIC_API_KEY: SecretStr | None = None
     API_KEY: SecretStr | None = None  # Server API key for auth
-    
+
     MODEL_NAME: str = "qwen3-vl:2b-thinking"
 
     TERMINAL_TIMEOUT_SECONDS: int = 30
@@ -70,16 +72,16 @@ class Settings(BaseSettings):
 
     class Config:
         env_file = ".env"
-    
+
     # Helper methods to safely get secret values
     def get_openai_api_key(self) -> str | None:
         """Get OpenAI API key value, or None if not set."""
         return self.OPENAI_API_KEY.get_secret_value() if self.OPENAI_API_KEY else None
-    
+
     def get_anthropic_api_key(self) -> str | None:
         """Get Anthropic API key value, or None if not set."""
         return self.ANTHROPIC_API_KEY.get_secret_value() if self.ANTHROPIC_API_KEY else None
-    
+
     def get_api_key(self) -> str | None:
         """Get server API key value, or None if not set."""
         return self.API_KEY.get_secret_value() if self.API_KEY else None
@@ -111,34 +113,22 @@ class Settings(BaseSettings):
 
     @property
     def terminal_allowlist(self) -> set[str]:
-        return {
-            item.strip().lower()
-            for item in self.TERMINAL_ALLOWLIST.split(",")
-            if item.strip()
-        }
+        return {item.strip().lower() for item in self.TERMINAL_ALLOWLIST.split(",") if item.strip()}
 
     @property
     def llm_fallback_providers(self) -> list[str]:
         return [
-            item.strip().lower()
-            for item in self.LLM_FALLBACK_PROVIDERS.split(",")
-            if item.strip()
+            item.strip().lower() for item in self.LLM_FALLBACK_PROVIDERS.split(",") if item.strip()
         ]
 
     @property
     def cors_origins(self) -> list[str]:
-        return [
-            item.strip()
-            for item in self.CORS_ORIGINS.split(",")
-            if item.strip()
-        ]
+        return [item.strip() for item in self.CORS_ORIGINS.split(",") if item.strip()]
 
     @property
     def agent_approval_tools(self) -> set[str]:
         return {
-            item.strip().lower()
-            for item in self.AGENT_APPROVAL_TOOLS.split(",")
-            if item.strip()
+            item.strip().lower() for item in self.AGENT_APPROVAL_TOOLS.split(",") if item.strip()
         }
 
 

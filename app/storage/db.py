@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import shutil
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -12,7 +12,7 @@ from app.storage.paths import paths
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 class Storage:
@@ -90,10 +90,7 @@ class Storage:
                 );
                 """
             )
-            cols = {
-                row[1]
-                for row in conn.execute("PRAGMA table_info(sessions)").fetchall()
-            }
+            cols = {row[1] for row in conn.execute("PRAGMA table_info(sessions)").fetchall()}
             if "project_root" not in cols:
                 conn.execute("ALTER TABLE sessions ADD COLUMN project_root TEXT")
 
@@ -217,7 +214,9 @@ class Storage:
             session["project_root"] = meta["project_root"]
         return session
 
-    def set_project_root(self, session_id: str, user_id: str, project_root: str | None) -> dict[str, Any]:
+    def set_project_root(
+        self, session_id: str, user_id: str, project_root: str | None
+    ) -> dict[str, Any]:
         session = self.get_session(session_id)
         if not session or session["user_id"] != user_id:
             raise KeyError(f"Session '{session_id}' not found for user.")
@@ -485,7 +484,7 @@ class Storage:
                             "name": file_path.name,
                             "size": stat.st_size,
                             "modified_at": datetime.fromtimestamp(
-                                stat.st_mtime, tz=timezone.utc
+                                stat.st_mtime, tz=UTC
                             ).isoformat(),
                             "url": f"/sessions/{session_id}/files/{kind}/{file_path.name}",
                             "retained": False,
@@ -511,12 +510,9 @@ class Storage:
                             "name": file_path.name,
                             "size": stat.st_size,
                             "modified_at": datetime.fromtimestamp(
-                                stat.st_mtime, tz=timezone.utc
+                                stat.st_mtime, tz=UTC
                             ).isoformat(),
-                            "url": (
-                                f"/retained-artifacts/{session_dir.name}/"
-                                f"{file_path.name}"
-                            ),
+                            "url": (f"/retained-artifacts/{session_dir.name}/{file_path.name}"),
                             "retained": True,
                         }
                     )

@@ -20,6 +20,7 @@ from typing import Any
 @dataclass
 class SessionContext:
     """Immutable session context data."""
+
     user_id: str | None = None
     session_id: str | None = None
     project_root: str | None = None
@@ -27,22 +28,21 @@ class SessionContext:
 
 # ContextVar provides coroutine-local storage - safe for concurrent async requests
 _session_context: ContextVar[SessionContext] = ContextVar(
-    "session_context",
-    default=SessionContext()
+    "session_context", default=SessionContext()
 )
 
 
 class SessionContextManager:
     """
     Context manager for setting session context within a scope.
-    
+
     Usage:
         async with session_context_scope(user_id="u1", session_id="s1", project_root="/path"):
             # All calls to current_user_id(), etc. return the scoped values
             result = await some_tool.execute()
         # Context automatically cleared after scope exits
     """
-    
+
     def __init__(
         self,
         user_id: str,
@@ -55,19 +55,19 @@ class SessionContextManager:
             project_root=project_root,
         )
         self._token: Token[SessionContext] | None = None
-    
-    def __enter__(self) -> "SessionContextManager":
+
+    def __enter__(self) -> SessionContextManager:
         self._token = _session_context.set(self._context)
         return self
-    
+
     def __exit__(self, *args: Any) -> None:
         if self._token is not None:
             _session_context.reset(self._token)
             self._token = None
-    
-    async def __aenter__(self) -> "SessionContextManager":
+
+    async def __aenter__(self) -> SessionContextManager:
         return self.__enter__()
-    
+
     async def __aexit__(self, *args: Any) -> None:
         self.__exit__(*args)
 
@@ -79,9 +79,9 @@ def session_context_scope(
 ) -> SessionContextManager:
     """
     Create a context manager scope for session context.
-    
+
     Preferred over set_session/clear_session for proper cleanup.
-    
+
     Example:
         async with session_context_scope(user_id, session_id, project_root):
             await tool.execute()
@@ -96,10 +96,10 @@ def set_session(
 ) -> Token[SessionContext]:
     """
     Set the current session context.
-    
+
     Returns a token that can be used to reset the context.
     Prefer using session_context_scope() for automatic cleanup.
-    
+
     IMPORTANT: Call clear_session() or reset with the returned token
     when done to avoid context leaking between requests.
     """
@@ -114,7 +114,7 @@ def set_session(
 def clear_session(token: Token[SessionContext] | None = None) -> None:
     """
     Clear/reset the current session context.
-    
+
     Args:
         token: If provided, reset to the state before the corresponding set_session().
                If None, reset to the default (empty) context.

@@ -75,8 +75,7 @@ class PlannerAgent(BaseAgent):
         for manifest in manifests:
             params = json.dumps(manifest.parameters or {}, separators=(",", ":"))
             tool_lines.append(
-                f"- {manifest.name}: {manifest.description}\n"
-                f"  parameters schema: {params}"
+                f"- {manifest.name}: {manifest.description}\n  parameters schema: {params}"
             )
 
         system = (
@@ -86,12 +85,7 @@ class PlannerAgent(BaseAgent):
             '{"tool": "<name>", "arguments": {}}. '
             "Do not include markdown."
         )
-        prompt = (
-            "Available tools:\n"
-            + "\n".join(tool_lines)
-            + "\n\nUser request:\n"
-            + user_input
-        )
+        prompt = "Available tools:\n" + "\n".join(tool_lines) + "\n\nUser request:\n" + user_input
 
         llm = llm_router
         raw = await llm.complete(prompt=prompt, system=system)
@@ -159,7 +153,7 @@ class PlannerAgent(BaseAgent):
             "expression",
         ):
             if lowered.startswith(prefix):
-                return text[len(prefix):].strip(" :")
+                return text[len(prefix) :].strip(" :")
         return text
 
     def _extract_python_code(self, user_input: str) -> str:
@@ -170,7 +164,7 @@ class PlannerAgent(BaseAgent):
         lowered = user_input.lower()
         for prefix in ("run python", "execute python", "python"):
             if lowered.startswith(prefix):
-                return user_input[len(prefix):].strip(" :")
+                return user_input[len(prefix) :].strip(" :")
 
         return user_input.strip()
 
@@ -178,7 +172,7 @@ class PlannerAgent(BaseAgent):
         lowered = user_input.lower()
         for prefix in ("run command", "run shell", "terminal", "shell", "run"):
             if lowered.startswith(prefix):
-                return user_input[len(prefix):].strip(" :")
+                return user_input[len(prefix) :].strip(" :")
 
         return user_input.strip()
 
@@ -234,7 +228,7 @@ class PlannerAgent(BaseAgent):
             "web search",
         ):
             if lowered.startswith(prefix):
-                return text[len(prefix):].strip(" :")
+                return text[len(prefix) :].strip(" :")
         return text
 
     def _build_browser_arguments(self, user_input: str) -> dict:

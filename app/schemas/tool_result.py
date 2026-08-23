@@ -14,9 +14,6 @@ class ToolResult(BaseModel):
 
     error: str | None = None
 
-    execution_time: float = Field(
-        default=0.0,
-        description="Execution time in seconds"
-    )
+    execution_time: float = Field(default=0.0, description="Execution time in seconds")
 
     metadata: dict[str, Any] = Field(default_factory=dict)

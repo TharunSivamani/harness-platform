@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 from uuid import uuid4
@@ -45,12 +45,8 @@ class TaskRecord:
     error: str | None = None
     retries: int = 0
     history: list[dict[str, Any]] = field(default_factory=list)
-    created_at: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
-    )
-    updated_at: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
-    )
+    created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
+    updated_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
 
 class StateMachine:
@@ -76,12 +72,10 @@ class StateMachine:
         task = self.get(task_id)
         allowed = ALLOWED_TRANSITIONS[task.state]
         if new_state not in allowed:
-            raise ValueError(
-                f"Invalid transition {task.state.value} -> {new_state.value}"
-            )
+            raise ValueError(f"Invalid transition {task.state.value} -> {new_state.value}")
 
         task.state = new_state
-        task.updated_at = datetime.now(timezone.utc).isoformat()
+        task.updated_at = datetime.now(UTC).isoformat()
         if "error" in extra:
             task.error = extra["error"]
         if "output" in extra:

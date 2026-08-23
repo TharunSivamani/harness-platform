@@ -9,8 +9,8 @@ Works inside an already-running asyncio loop (forgeai chat REPL).
 from __future__ import annotations
 
 import sys
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 
 @dataclass(frozen=True)
@@ -27,9 +27,7 @@ def _visible(choices: Sequence[Choice], query: str) -> list[Choice]:
     return [
         c
         for c in choices
-        if q in c.value.lower()
-        or q in c.label.lower()
-        or q in (c.description or "").lower()
+        if q in c.value.lower() or q in c.label.lower() or q in (c.description or "").lower()
     ]
 
 

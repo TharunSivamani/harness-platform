@@ -17,7 +17,7 @@ API keys are typed as `SecretStr` to prevent accidental logging:
 from app.core.config import settings
 
 # Safe access via helper methods:
-api_key = settings.get_openai_api_key()      # Returns str | None
+api_key = settings.get_openai_api_key()  # Returns str | None
 anthropic_key = settings.get_anthropic_api_key()
 server_key = settings.get_api_key()
 

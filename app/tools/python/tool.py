@@ -3,10 +3,10 @@ import operator
 import time
 from typing import Any
 
+from app.core.config import settings
 from app.schemas.tool_manifest import ToolManifest
 from app.schemas.tool_result import ToolResult
 from app.tools.base import BaseTool
-from app.core.config import settings
 
 manifest = ToolManifest(
     name="python",
@@ -102,10 +102,7 @@ class RestrictedPythonEvaluator(ast.NodeVisitor):
         return {self.visit(elt) for elt in node.elts}
 
     def visit_Dict(self, node: ast.Dict) -> dict:
-        return {
-            self.visit(key): self.visit(value)
-            for key, value in zip(node.keys, node.values)
-        }
+        return {self.visit(key): self.visit(value) for key, value in zip(node.keys, node.values)}
 
     def visit_UnaryOp(self, node: ast.UnaryOp) -> Any:
         op_type = type(node.op)

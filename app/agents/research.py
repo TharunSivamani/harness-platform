@@ -18,7 +18,7 @@ class ResearchAgent(BaseAgent):
         lowered = query.lower()
         for prefix in ("research", "investigate", "look up"):
             if lowered.startswith(prefix):
-                query = query[len(prefix):].strip(" :")
+                query = query[len(prefix) :].strip(" :")
                 break
 
         return await self.kernel.execute("search", query=query, max_results=5)

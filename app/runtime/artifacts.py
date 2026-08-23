@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import shutil
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -19,9 +19,7 @@ class Artifact:
     media_type: str
     size: int
     version: int = 1
-    created_at: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
-    )
+    created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -49,7 +47,7 @@ class ArtifactManager:
                 media_type=item["media_type"],
                 size=item["size"],
                 version=item.get("version", 1),
-                created_at=item.get("created_at", datetime.now(timezone.utc).isoformat()),
+                created_at=item.get("created_at", datetime.now(UTC).isoformat()),
                 metadata=item.get("metadata", {}),
             )
             self._artifacts[artifact.artifact_id] = artifact
@@ -79,9 +77,7 @@ class ArtifactManager:
         metadata: dict[str, Any] | None = None,
     ) -> Artifact:
         artifact_id = str(uuid4())
-        versions = [
-            item for item in self._artifacts.values() if item.name == name
-        ]
+        versions = [item for item in self._artifacts.values() if item.name == name]
         version = len(versions) + 1
         folder = self.root / artifact_id
         folder.mkdir(parents=True, exist_ok=True)

@@ -19,7 +19,7 @@ from fastapi import APIRouter
 
 router = APIRouter(prefix="/tools")
 
+
 @router.get("")
-async def list_tools():
-    ...
+async def list_tools(): ...
 ```
