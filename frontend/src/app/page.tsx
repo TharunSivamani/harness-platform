@@ -75,7 +75,7 @@ function ChatPageInner() {
     return data.sessions;
   }
 
-  async function loadProjectTree(sessionId: string, uid = userId, _root?: string | null) {
+  async function loadProjectTree(sessionId: string, uid = userId) {
     try {
       const tree = await api.projectTree(sessionId, ".", 3, uid);
       setProjectRoot(tree.project_root);
@@ -96,7 +96,7 @@ function ChatPageInner() {
       setSessions(list.sessions);
       const session = list.sessions.find((item) => item.session_id === sessionId);
       if (session?.project_root) {
-        await loadProjectTree(sessionId, uid, session.project_root);
+        await loadProjectTree(sessionId, uid);
       }
     } catch {
       // best-effort live refresh
