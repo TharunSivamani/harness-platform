@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { SessionDetail, api } from "@/lib/api";
+import { Session, SessionDetail, api } from "@/lib/api";
 
 export default function SessionsPage() {
-  const [sessions, setSessions] = useState<string[]>([]);
+  const [sessions, setSessions] = useState<Session[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<SessionDetail | null>(null);
   const [error, setError] = useState("");
@@ -71,18 +71,18 @@ export default function SessionsPage() {
         </div>
 
         <div className="mt-5 space-y-2">
-          {sessions.map((id) => (
+          {sessions.map((session) => (
             <button
-              key={id}
+              key={session.session_id}
               type="button"
-              onClick={() => setSelected(id)}
+              onClick={() => setSelected(session.session_id)}
               className={`w-full rounded-lg border px-3 py-2 text-left font-mono text-xs transition ${
-                selected === id
+                selected === session.session_id
                   ? "border-ember-500/50 bg-ember-500/10 text-ember-300"
                   : "border-steel-700 text-steel-300 hover:border-steel-500"
               }`}
             >
-              {id}
+              {session.title || session.session_id}
             </button>
           ))}
           {!sessions.length && (

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { UserArtifact, API_URL, api } from "@/lib/api";
 import { formatBytes } from "@/lib/format";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -27,7 +27,7 @@ export default function ArtifactsPage() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<UserArtifact | null>(null);
 
-  async function refresh(uid = userId) {
+  const refresh = useCallback(async (uid = userId) => {
     try {
       const data = await api.artifacts(uid);
       setArtifacts(data.artifacts);
@@ -35,11 +35,11 @@ export default function ArtifactsPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load artifacts");
     }
-  }
+  }, [userId]);
 
   useEffect(() => {
-    void refresh(userId);
-  }, [userId]);
+    void refresh();
+  }, [refresh]);
 
   const visible = useMemo(
     () => (filter === "all" ? artifacts : artifacts.filter((item) => item.kind === filter)),

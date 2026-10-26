@@ -157,7 +157,7 @@ function ChatPageInner() {
     setProjectRoot(root);
     setProjectPathInput(root || "");
     if (root) {
-      await loadProjectTree(sessionId, uid, root);
+      await loadProjectTree(sessionId, uid);
     } else {
       setProjectTree([]);
     }
@@ -932,7 +932,7 @@ function ChatPageInner() {
                   <button
                     type="button"
                     className="rounded px-2 py-1 text-[11px] text-slate-400 hover:bg-white/5 hover:text-slate-200"
-                    onClick={() => void loadProjectTree(activeId, userId, projectRoot)}
+                    onClick={() => void loadProjectTree(activeId, userId)}
                     title="Refresh tree"
                   >
                     Refresh
