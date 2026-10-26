@@ -1,0 +1,19 @@
+cff-version: 1.2.0
+message: "If you use ForgeAI in your research, please cite this software."
+title: ForgeAI
+type: software
+authors:
+  - family-names: Sivamani
+    given-names: Tharun
+abstract: "Portable ChatGPT-style agent operating system with a Hermes-inspired tool runtime, sandboxed execution, and portable workspace."
+version: 0.3.0
+date-released: "2026-08-23"
+license: MIT
+repository-code: "https://github.com/TharunSivamani/harness-platform"
+keywords:
+  - agent-harness
+  - llm-agents
+  - tool-use
+  - sandbox
+  - fastapi
+  - nextjs

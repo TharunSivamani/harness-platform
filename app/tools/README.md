@@ -27,7 +27,8 @@ from app.tools.context import (
 # In chat loop (automatic):
 async with session_context_scope(user_id, session_id, project_root):
     result = await tool.execute(...)
-    
+
+
 # In tool implementation:
 def get_workspace():
     return Path(current_project_root() or "/tmp")

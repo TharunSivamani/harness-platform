@@ -1,5 +1,5 @@
-from app.memory.system import memory_system
 from app.memory.session import session_manager
+from app.memory.system import memory_system
 
 
 def main():

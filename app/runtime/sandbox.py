@@ -24,6 +24,7 @@ from app.core.logger import logger
 
 class SandboxUnavailableError(Exception):
     """Raised when the requested sandbox backend is not available."""
+
     pass
 
 
@@ -49,7 +50,7 @@ class SandboxManager:
     - auto: docker when the CLI is available, else local (with warning)
     - local: subprocess with timeout (host env, project/workdir cwd)
     - docker: containerized run - FAILS if Docker unavailable (no silent downgrade)
-    
+
     SECURITY NOTE:
     - 'auto' mode will warn but continue if Docker is unavailable
     - 'docker' mode will FAIL if Docker is unavailable (no silent downgrade)
@@ -63,19 +64,19 @@ class SandboxManager:
     def resolve_backend(self, strict: bool = False) -> str:
         """
         Resolve the effective backend to use.
-        
+
         Args:
             strict: If True, raise SandboxUnavailableError instead of downgrading.
                    This is set automatically when SANDBOX_BACKEND='docker'.
-        
+
         Returns:
             The backend name ('docker' or 'local')
-            
+
         Raises:
             SandboxUnavailableError: If strict=True and Docker is unavailable.
         """
         configured = (settings.SANDBOX_BACKEND or "auto").lower().strip()
-        
+
         if configured == "docker":
             if not self.docker_available():
                 if strict or configured == "docker":
@@ -85,7 +86,7 @@ class SandboxManager:
                         "or set SANDBOX_BACKEND='local' if sandboxing is not required."
                     )
             return "docker"
-        
+
         if configured == "auto":
             if self.docker_available():
                 return "docker"
@@ -99,12 +100,12 @@ class SandboxManager:
                 )
                 self._downgrade_warned = True
             return "local"
-        
+
         return "local"
 
     def docker_available(self) -> bool:
         return shutil.which("docker") is not None
-    
+
     def get_backend_status(self) -> dict[str, Any]:
         """
         Get detailed status about sandbox backend configuration.
@@ -112,14 +113,14 @@ class SandboxManager:
         """
         configured = (settings.SANDBOX_BACKEND or "auto").lower().strip()
         docker_ok = self.docker_available()
-        
+
         try:
             effective = self.resolve_backend(strict=False)
             error = None
         except SandboxUnavailableError as e:
             effective = None
             error = str(e)
-        
+
         return {
             "configured": configured,
             "effective": effective,
@@ -141,7 +142,7 @@ class SandboxManager:
     ) -> SandboxResult:
         """
         Execute a command in the configured sandbox backend.
-        
+
         Args:
             command: Command to execute (string or argv list)
             workdir: Working directory for execution
@@ -151,10 +152,10 @@ class SandboxManager:
             mounts: Additional volume mounts (Docker only)
             strict: If True, fail if Docker unavailable when SANDBOX_BACKEND='docker'.
                    Default: True when SANDBOX_BACKEND='docker', False otherwise.
-        
+
         Returns:
             SandboxResult with execution output
-            
+
         Raises:
             SandboxUnavailableError: If strict=True and requested backend unavailable.
         """
@@ -163,18 +164,19 @@ class SandboxManager:
         network = settings.SANDBOX_NETWORK if network is None else network
         workdir = Path(workdir or tempfile.mkdtemp(prefix="forge-sandbox-"))
         workdir.mkdir(parents=True, exist_ok=True)
-        
+
         # Determine strictness: default to strict when explicitly configured for docker
         configured = (settings.SANDBOX_BACKEND or "auto").lower().strip()
         if strict is None:
-            strict = (configured == "docker")
-        
+            strict = configured == "docker"
+
         # This will raise SandboxUnavailableError if strict and Docker unavailable
         backend = self.resolve_backend(strict=strict)
-        
+
         # Track if we downgraded
-        downgraded = (configured in ("docker", "auto") and backend == "local" 
-                     and not self.docker_available())
+        downgraded = (
+            configured in ("docker", "auto") and backend == "local" and not self.docker_available()
+        )
 
         self._active[sandbox_id] = {
             "started": time.time(),
@@ -203,7 +205,7 @@ class SandboxManager:
                     env=env or {},
                     timeout=timeout,
                 )
-            
+
             # Mark if execution was downgraded from requested backend
             if downgraded:
                 result.downgraded = True
@@ -212,7 +214,7 @@ class SandboxManager:
                     "Execution ran in LOCAL mode (no sandbox isolation) "
                     f"because Docker was unavailable. Original config: {configured}"
                 )
-            
+
             return result
         finally:
             self._active.pop(sandbox_id, None)

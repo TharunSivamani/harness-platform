@@ -71,9 +71,7 @@ class SearchTool(BaseTool):
 
     async def _search_duckduckgo(self, query: str, max_results: int) -> list[dict]:
         headers = {
-            "User-Agent": (
-                "Mozilla/5.0 (compatible; ForgeAI/0.1; +https://localhost)"
-            ),
+            "User-Agent": ("Mozilla/5.0 (compatible; ForgeAI/0.1; +https://localhost)"),
         }
 
         async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:

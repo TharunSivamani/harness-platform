@@ -33,10 +33,12 @@ See [docs/AUTONOMOUS.md](../../docs/AUTONOMOUS.md).
 import asyncio
 from app.agents.planner import PlannerAgent
 
+
 async def main():
     planner = PlannerAgent()
     result = await planner.run("calculate 2 + 2")
     print(result.output)
+
 
 asyncio.run(main())
 ```

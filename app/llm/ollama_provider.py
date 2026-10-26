@@ -142,37 +142,39 @@ class OllamaProvider(BaseLLM):
         completion_tokens = 0
         last_chunk: dict[str, Any] = {}
 
-        async with httpx.AsyncClient(timeout=300.0) as client:
-            async with client.stream(
+        async with (
+            httpx.AsyncClient(timeout=300.0) as client,
+            client.stream(
                 "POST",
                 f"{self.base_url}/api/chat",
                 json=payload,
-            ) as response:
-                response.raise_for_status()
-                async for line in response.aiter_lines():
-                    if not line.strip():
-                        continue
-                    chunk = json.loads(line)
-                    last_chunk = chunk
-                    message = chunk.get("message") or {}
+            ) as response,
+        ):
+            response.raise_for_status()
+            async for line in response.aiter_lines():
+                if not line.strip():
+                    continue
+                chunk = json.loads(line)
+                last_chunk = chunk
+                message = chunk.get("message") or {}
 
-                    thinking_delta = message.get("thinking") or ""
-                    content_delta = message.get("content") or ""
-                    if thinking_delta:
-                        thinking_parts.append(thinking_delta)
-                        if on_delta:
-                            await on_delta(StreamDelta(thinking=thinking_delta))
-                    if content_delta:
-                        content_parts.append(content_delta)
-                        if on_delta:
-                            await on_delta(StreamDelta(content=content_delta))
+                thinking_delta = message.get("thinking") or ""
+                content_delta = message.get("content") or ""
+                if thinking_delta:
+                    thinking_parts.append(thinking_delta)
+                    if on_delta:
+                        await on_delta(StreamDelta(thinking=thinking_delta))
+                if content_delta:
+                    content_parts.append(content_delta)
+                    if on_delta:
+                        await on_delta(StreamDelta(content=content_delta))
 
-                    if message.get("tool_calls"):
-                        tool_calls = self._parse_tool_calls(message)
+                if message.get("tool_calls"):
+                    tool_calls = self._parse_tool_calls(message)
 
-                    if chunk.get("done"):
-                        prompt_tokens = int(chunk.get("prompt_eval_count") or 0)
-                        completion_tokens = int(chunk.get("eval_count") or 0)
+                if chunk.get("done"):
+                    prompt_tokens = int(chunk.get("prompt_eval_count") or 0)
+                    completion_tokens = int(chunk.get("eval_count") or 0)
 
         content, thinking = _split_thinking(
             "".join(content_parts) or None,

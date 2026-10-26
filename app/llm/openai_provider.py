@@ -183,9 +183,7 @@ class OpenAIProvider(BaseLLM):
                 parsed = json.loads(raw_args)
             except json.JSONDecodeError:
                 parsed = {"raw": raw_args}
-            tool_calls.append(
-                {"id": entry["id"], "name": entry["name"], "arguments": parsed}
-            )
+            tool_calls.append({"id": entry["id"], "name": entry["name"], "arguments": parsed})
 
         return LLMResponse(
             content="".join(content_parts) or None,

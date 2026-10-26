@@ -39,7 +39,7 @@ print(result.output)
 # Injection attempts are blocked:
 result = await kernel.execute("terminal", command="echo hi; rm -rf /")
 print(result.success)  # False
-print(result.error)    # "Command contains disallowed shell operator: semicolon..."
+print(result.error)  # "Command contains disallowed shell operator: semicolon..."
 ```
 
 ## Configuration

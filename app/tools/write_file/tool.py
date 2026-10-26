@@ -44,7 +44,7 @@ class WriteFileTool(BaseTool):
                 success=True,
                 output=f"Wrote {len(content)} characters to {path}",
                 execution_time=time.perf_counter() - start,
-                metadata={"path": path, "bytes": len(content.encode('utf-8'))},
+                metadata={"path": path, "bytes": len(content.encode("utf-8"))},
             )
         except Exception as exc:  # noqa: BLE001
             return ToolResult(

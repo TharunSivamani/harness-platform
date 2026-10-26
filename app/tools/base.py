@@ -5,7 +5,6 @@ from app.schemas.tool_result import ToolResult
 
 
 class BaseTool(ABC):
-
     manifest: ToolManifest
 
     @abstractmethod

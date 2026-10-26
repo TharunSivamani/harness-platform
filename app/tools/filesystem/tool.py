@@ -116,9 +116,7 @@ class FilesystemTool(BaseTool):
                     metadata={"path": str(target.relative_to(get_workspace_root()))},
                 )
 
-            raise ValueError(
-                f"Unsupported action '{action}'. Use list, read, or write."
-            )
+            raise ValueError(f"Unsupported action '{action}'. Use list, read, or write.")
 
         except Exception as e:
             return ToolResult(

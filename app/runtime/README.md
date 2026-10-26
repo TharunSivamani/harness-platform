@@ -59,8 +59,10 @@ from app.runtime.workflow import WorkflowEngine, WorkflowNode
 engine = WorkflowEngine()
 wf = engine.create()
 
+
 async def step_a(context, outputs):
     return 1
+
 
 engine.add_node(wf, WorkflowNode("a", "a", step_a))
 print(await engine.run(wf))

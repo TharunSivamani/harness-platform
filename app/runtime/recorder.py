@@ -8,17 +8,15 @@ growth. Log files are automatically rotated when they exceed the size limit.
 from __future__ import annotations
 
 import json
-import os
 import shutil
 from collections import deque
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 from app.storage.paths import paths
-
 
 # Default maximum log file size before rotation (10 MB)
 DEFAULT_MAX_FILE_SIZE_MB = 10
@@ -42,15 +40,13 @@ class ExecutionRecord:
     memory_mb: float | None = None
     cpu: float | None = None
     logs: list[str] = field(default_factory=list)
-    created_at: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
-    )
+    created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
 
 class ExecutionRecorder:
     """
     Persists execution traces for debugging and replay with automatic log rotation.
-    
+
     Features:
     - Automatic file rotation when log exceeds max_file_size_mb
     - Configurable number of backup files
@@ -66,7 +62,7 @@ class ExecutionRecorder:
     ):
         """
         Initialize the execution recorder.
-        
+
         Args:
             path: Path to the JSONL log file
             max_file_size_mb: Maximum file size before rotation (MB)
@@ -75,11 +71,11 @@ class ExecutionRecorder:
         """
         self.path = Path(path or paths.root / "execution_log.jsonl")
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        
+
         self._max_file_size_bytes = int(max_file_size_mb * 1024 * 1024)
         self._max_backup_count = max_backup_count
         self._max_memory_records = max_memory_records
-        
+
         # Use deque for bounded in-memory storage
         self._records: deque[ExecutionRecord] = deque(maxlen=max_memory_records)
         self._record_index: dict[str, ExecutionRecord] = {}
@@ -101,7 +97,7 @@ class ExecutionRecorder:
         """
         if not self.path.exists():
             return
-        
+
         # Delete oldest backup if it exists
         oldest = self.path.with_suffix(f".jsonl.{self._max_backup_count}")
         if oldest.exists():
@@ -109,7 +105,7 @@ class ExecutionRecorder:
                 oldest.unlink()
             except OSError:
                 pass
-        
+
         # Rotate existing backups: .4 -> .5, .3 -> .4, etc.
         for i in range(self._max_backup_count - 1, 0, -1):
             src = self.path.with_suffix(f".jsonl.{i}")
@@ -119,7 +115,7 @@ class ExecutionRecorder:
                     shutil.move(str(src), str(dst))
                 except OSError:
                     pass
-        
+
         # Rotate current to .1
         backup_1 = self.path.with_suffix(".jsonl.1")
         try:
@@ -146,7 +142,7 @@ class ExecutionRecorder:
     ) -> ExecutionRecord:
         """
         Record an execution trace.
-        
+
         The record is stored in memory (bounded) and appended to the log file.
         Log rotation occurs automatically when file size exceeds the limit.
         """
@@ -162,21 +158,21 @@ class ExecutionRecorder:
             cpu=cpu,
             logs=logs or [],
         )
-        
+
         # Check for rotation before writing
         if self._should_rotate():
             self._rotate_logs()
-        
+
         # Add to in-memory storage
         # If deque is at capacity, remove evicted record from index
         if len(self._records) == self._max_memory_records:
             evicted = self._records[0]
             self._record_index.pop(evicted.record_id, None)
-        
+
         self._records.append(record)
         self._record_index[record.record_id] = record
         self._total_recorded += 1
-        
+
         # Append to log file
         try:
             with self.path.open("a", encoding="utf-8") as handle:
@@ -184,7 +180,7 @@ class ExecutionRecorder:
         except OSError:
             # Log write failure is non-fatal - record is still in memory
             pass
-        
+
         return record
 
     def get(self, record_id: str) -> ExecutionRecord:
@@ -215,12 +211,13 @@ class ExecutionRecorder:
                 file_size = self.path.stat().st_size
             except OSError:
                 pass
-        
+
         backup_count = sum(
-            1 for i in range(1, self._max_backup_count + 1)
+            1
+            for i in range(1, self._max_backup_count + 1)
             if self.path.with_suffix(f".jsonl.{i}").exists()
         )
-        
+
         return {
             "total_recorded": self._total_recorded,
             "memory_records": len(self._records),

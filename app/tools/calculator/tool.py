@@ -124,7 +124,7 @@ _ALLOWED_FUNCS: dict[str, Any] = {
 class RestrictedMathEvaluator(ast.NodeVisitor):
     """
     Safe math expression evaluator using AST whitelisting.
-    
+
     Only allows:
     - Numeric literals (int, float, complex)
     - Basic arithmetic operators (+, -, *, /, //, %, **)
@@ -133,7 +133,7 @@ class RestrictedMathEvaluator(ast.NodeVisitor):
     - Whitelisted constants (pi, e, tau)
     - Lists, tuples for function args like min([1,2,3])
     """
-    
+
     def evaluate(self, expression: str) -> Any:
         """Parse and evaluate a math expression safely."""
         try:
@@ -141,32 +141,32 @@ class RestrictedMathEvaluator(ast.NodeVisitor):
         except SyntaxError as e:
             raise ValueError(f"Invalid expression syntax: {e}") from e
         return self.visit(tree.body)
-    
+
     def visit_Expression(self, node: ast.Expression) -> Any:
         return self.visit(node.body)
-    
+
     def visit_Constant(self, node: ast.Constant) -> Any:
         """Allow numeric literals and strings (for error messages)."""
         if isinstance(node.value, (int, float, complex, bool, type(None))):
             return node.value
         raise ValueError(f"Constant type not allowed: {type(node.value).__name__}")
-    
+
     def visit_Num(self, node: ast.Num) -> Any:
         """Python 3.7 compatibility for numeric literals."""
         return node.n
-    
+
     def visit_List(self, node: ast.List) -> list:
         return [self.visit(elt) for elt in node.elts]
-    
+
     def visit_Tuple(self, node: ast.Tuple) -> tuple:
         return tuple(self.visit(elt) for elt in node.elts)
-    
+
     def visit_UnaryOp(self, node: ast.UnaryOp) -> Any:
         op_type = type(node.op)
         if op_type not in _UNARY_OPS:
             raise ValueError(f"Unary operator not allowed: {op_type.__name__}")
         return _UNARY_OPS[op_type](self.visit(node.operand))
-    
+
     def visit_BinOp(self, node: ast.BinOp) -> Any:
         op_type = type(node.op)
         if op_type not in _BINARY_OPS:
@@ -174,7 +174,7 @@ class RestrictedMathEvaluator(ast.NodeVisitor):
         left = self.visit(node.left)
         right = self.visit(node.right)
         return _BINARY_OPS[op_type](left, right)
-    
+
     def visit_Compare(self, node: ast.Compare) -> Any:
         left = self.visit(node.left)
         for op, comparator in zip(node.ops, node.comparators):
@@ -186,24 +186,24 @@ class RestrictedMathEvaluator(ast.NodeVisitor):
                 return False
             left = right
         return True
-    
+
     def visit_Call(self, node: ast.Call) -> Any:
         if not isinstance(node.func, ast.Name):
             raise ValueError("Only simple function calls are allowed (no method calls).")
-        
+
         func_name = node.func.id
         if func_name not in _ALLOWED_FUNCS:
             raise ValueError(
                 f"Function '{func_name}' is not allowed. "
                 f"Allowed: {', '.join(sorted(_ALLOWED_FUNCS.keys()))}"
             )
-        
+
         if node.keywords:
             raise ValueError("Keyword arguments are not allowed in calculator expressions.")
-        
+
         args = [self.visit(arg) for arg in node.args]
         return _ALLOWED_FUNCS[func_name](*args)
-    
+
     def visit_Name(self, node: ast.Name) -> Any:
         name = node.id
         if name in _ALLOWED_NAMES:
@@ -215,14 +215,14 @@ class RestrictedMathEvaluator(ast.NodeVisitor):
             f"Name '{name}' is not allowed. "
             f"Allowed constants: {', '.join(sorted(_ALLOWED_NAMES.keys()))}"
         )
-    
+
     def visit_IfExp(self, node: ast.IfExp) -> Any:
         """Allow ternary expressions: x if condition else y"""
         condition = self.visit(node.test)
         if condition:
             return self.visit(node.body)
         return self.visit(node.orelse)
-    
+
     def generic_visit(self, node: ast.AST) -> Any:
         raise ValueError(
             f"Expression node type not allowed: {type(node).__name__}. "
@@ -244,7 +244,7 @@ class CalculatorTool(BaseTool):
             expression = (expression or "").strip()
             if not expression:
                 raise ValueError("Expression must not be empty.")
-            
+
             # Use safe AST-based evaluation instead of eval()
             result = _evaluator.evaluate(expression)
 

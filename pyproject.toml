@@ -4,10 +4,20 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "forgeai"
-version = "0.2.1"
+version = "0.3.0"
 description = "Portable ChatGPT-style agent operating system"
 readme = "README.md"
 requires-python = ">=3.11"
+license = {text = "MIT"}
+keywords = ["agent-harness", "llm-agents", "tool-use", "sandbox", "fastapi"]
+classifiers = [
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Framework :: FastAPI",
+]
+authors = [{name = "Tharun Sivamani"}]
+maintainers = [{name = "Tharun Sivamani"}]
+urls = {Homepage = "https://github.com/TharunSivamani/harness-platform", Repository = "https://github.com/TharunSivamani/harness-platform", Issues = "https://github.com/TharunSivamani/harness-platform/issues"}
 dependencies = [
   "fastapi>=0.100.0",
   "uvicorn>=0.20.0",
@@ -46,6 +56,10 @@ python_functions = ["test_*"]
 target-version = "py311"
 line-length = 100
 
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
 [tool.ruff.lint]
 select = [
   "E",     # pycodestyle errors
@@ -62,4 +76,20 @@ ignore = [
   "E501",  # line too long (handled by formatter)
   "B008",  # function call in default argument (FastAPI Depends pattern)
   "B905",  # zip without strict (Python 3.10+)
+  "B007",  # loop var unused — test helper
+  "B039",  # mutable ContextVar default — false positive for our pattern
+  "B904",  # raise from — handled elsewhere
+  "ARG001",  # unused arg — FastAPI Depends + interface stubs
+  "ARG002",  # unused method arg
+  "SIM102",  # nested if — readability preference
+  "SIM103",  # return condition directly — fine to keep explicit
+  "SIM105",  # suppress contextmanager — readability
+  "SIM108",  # ternary — keep explicit
+  "SIM117",  # nested with — explicit
+  "UP006",  # Dict/List vs dict/list — keep compat
+  "UP007",  # keep compat
+  "UP017",  # datetime.UTC — Python 3.11 compat requires timezone.utc
+  "UP035",  # collections.abc — keep typing for now
+  "UP037",  # remove quotes — keep explicit
+  "UP042",  # StrEnum — Python 3.11 compat
 ]

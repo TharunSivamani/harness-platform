@@ -20,8 +20,6 @@ def resolve_workspace_path(relative_path: str = ".") -> Path:
     candidate = (root / relative_path).resolve()
 
     if not candidate.is_relative_to(root):
-        raise ValueError(
-            f"Path '{relative_path}' is outside the workspace."
-        )
+        raise ValueError(f"Path '{relative_path}' is outside the workspace.")
 
     return candidate

@@ -1,11 +1,11 @@
 import asyncio
 
-from app.runtime.sandbox import sandbox_manager
-from app.runtime.workspace import workspace_manager
+from app.kernel.kernel import ExecutionKernel
 from app.runtime.artifacts import artifact_manager
 from app.runtime.events import event_bus
+from app.runtime.sandbox import sandbox_manager
 from app.runtime.state import TaskState, state_machine
-from app.kernel.kernel import ExecutionKernel
+from app.runtime.workspace import workspace_manager
 
 
 async def main():

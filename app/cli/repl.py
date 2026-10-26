@@ -210,10 +210,7 @@ async def cmd_profile_use(state: ReplState, name: str) -> None:
     set_profile_override(name)
     state.profile = name
     resolved = resolve_llm_config(name)
-    print(
-        f"{accent('ok')} profile {bold(name)}  "
-        f"{dim(f'{resolved.provider}/{resolved.model}')}"
-    )
+    print(f"{accent('ok')} profile {bold(name)}  {dim(f'{resolved.provider}/{resolved.model}')}")
 
 
 async def cmd_profile_pick(state: ReplState) -> None:
@@ -463,7 +460,7 @@ async def _run_with_pulse(state: ReplState, session_id: str, coro):
             i += 1
             try:
                 await asyncio.wait_for(stop.wait(), timeout=0.08)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 pass
 
     async def watch_keys() -> None:
@@ -586,7 +583,11 @@ async def run_repl(state: ReplState) -> None:
         if text.startswith("/"):
             if await handle_slash(state, text):
                 elapsed = format_duration(time.monotonic() - state.started_at)
-                print(dim(f"  until next forge | lived {elapsed} | {format_tokens(state.session_tokens)} tok"))
+                print(
+                    dim(
+                        f"  until next forge | lived {elapsed} | {format_tokens(state.session_tokens)} tok"
+                    )
+                )
                 break
             continue
 

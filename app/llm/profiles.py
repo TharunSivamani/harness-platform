@@ -3,7 +3,7 @@ from __future__ import annotations
 import getpass
 import os
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -27,7 +27,7 @@ def get_profile_override() -> str | None:
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 @dataclass
@@ -156,11 +156,7 @@ class ProfileStore:
     def _save_all(self, profiles: dict[str, LLMProfile]) -> None:
         paths.write_json(
             paths.llm_profiles_path(),
-            {
-                "profiles": {
-                    name: profile.to_public_dict() for name, profile in profiles.items()
-                }
-            },
+            {"profiles": {name: profile.to_public_dict() for name, profile in profiles.items()}},
         )
         secrets = {
             name: profile.api_key
@@ -178,7 +174,9 @@ class ProfileStore:
     def upsert_profile(self, profile: LLMProfile, *, activate: bool = False) -> LLMProfile:
         provider = profile.provider.lower().strip()
         if provider not in PROVIDERS:
-            raise ValueError(f"Unsupported provider '{provider}'. Choose from: {', '.join(PROVIDERS)}")
+            raise ValueError(
+                f"Unsupported provider '{provider}'. Choose from: {', '.join(PROVIDERS)}"
+            )
         name = profile.name.strip()
         if not name:
             raise ValueError("Profile name is required")
@@ -301,7 +299,10 @@ async def fetch_models_detailed(
                 return names, None
 
             if provider == "anthropic":
-                return [], "Anthropic does not expose a public model list endpoint here — type the model id."
+                return (
+                    [],
+                    "Anthropic does not expose a public model list endpoint here — type the model id.",
+                )
 
             headers = {}
             if api_key:

@@ -71,9 +71,7 @@ class BrowserTool(BaseTool):
 
             action = action.lower().strip()
             if action not in {"navigate", "content", "screenshot"}:
-                raise ValueError(
-                    "Unsupported action. Use navigate, content, or screenshot."
-                )
+                raise ValueError("Unsupported action. Use navigate, content, or screenshot.")
 
             if not url:
                 raise ValueError("URL is required.")

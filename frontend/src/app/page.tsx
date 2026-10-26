@@ -75,7 +75,7 @@ function ChatPageInner() {
     return data.sessions;
   }
 
-  async function loadProjectTree(sessionId: string, uid = userId, _root?: string | null) {
+  async function loadProjectTree(sessionId: string, uid = userId) {
     try {
       const tree = await api.projectTree(sessionId, ".", 3, uid);
       setProjectRoot(tree.project_root);
@@ -96,7 +96,7 @@ function ChatPageInner() {
       setSessions(list.sessions);
       const session = list.sessions.find((item) => item.session_id === sessionId);
       if (session?.project_root) {
-        await loadProjectTree(sessionId, uid, session.project_root);
+        await loadProjectTree(sessionId, uid);
       }
     } catch {
       // best-effort live refresh
@@ -157,7 +157,7 @@ function ChatPageInner() {
     setProjectRoot(root);
     setProjectPathInput(root || "");
     if (root) {
-      await loadProjectTree(sessionId, uid, root);
+      await loadProjectTree(sessionId, uid);
     } else {
       setProjectTree([]);
     }
@@ -932,7 +932,7 @@ function ChatPageInner() {
                   <button
                     type="button"
                     className="rounded px-2 py-1 text-[11px] text-slate-400 hover:bg-white/5 hover:text-slate-200"
-                    onClick={() => void loadProjectTree(activeId, userId, projectRoot)}
+                    onClick={() => void loadProjectTree(activeId, userId)}
                     title="Refresh tree"
                   >
                     Refresh

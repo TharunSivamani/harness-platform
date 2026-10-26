@@ -28,7 +28,7 @@ class CodingAgent(BaseAgent):
         code = text
         for prefix in ("code", "python", "run python"):
             if lowered.startswith(prefix):
-                code = text[len(prefix):].strip(" :")
+                code = text[len(prefix) :].strip(" :")
                 break
 
         return await self.kernel.execute("python", code=code)

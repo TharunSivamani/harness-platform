@@ -36,5 +36,5 @@ print(result.output)  # 10.0
 # Malicious expressions are blocked:
 result = await kernel.execute("calculator", expression="__import__('os').system('id')")
 print(result.success)  # False
-print(result.error)    # "Name '__import__' is not allowed..."
+print(result.error)  # "Name '__import__' is not allowed..."
 ```

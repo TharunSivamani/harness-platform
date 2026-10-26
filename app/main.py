@@ -10,7 +10,9 @@ from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.agents.chat_loop import chat_loop
+from app.agents.runner import agent_runner
 from app.core.config import settings
+from app.kernel.kernel import ExecutionKernel
 from app.llm.profiles import (
     PROVIDERS,
     LLMProfile,
@@ -21,6 +23,8 @@ from app.llm.profiles import (
     resolve_llm_config,
 )
 from app.observability.metrics import metrics
+from app.runtime.events import event_bus
+from app.runtime.recorder import execution_recorder
 from app.runtime.sandbox import sandbox_manager
 from app.security.auth import require_api_key
 from app.storage.db import storage
@@ -63,6 +67,15 @@ class ChatRequest(BaseModel):
     content: str = ""
     user_id: str | None = None
     attachments: list[str] = Field(default_factory=list)
+
+
+class AgentRunRequest(BaseModel):
+    goal: str = Field(..., min_length=1)
+    session_id: str | None = None
+
+
+class ToolExecutionRequest(BaseModel):
+    arguments: dict[str, object] = Field(default_factory=dict)
 
 
 class LLMProfileCreate(BaseModel):
@@ -187,6 +200,7 @@ async def browse_folder(user_id: str = Depends(resolve_user_id)):
     Open a native OS folder picker on the machine running the API.
     Returns the absolute path, or cancelled=true if the user dismissed the dialog.
     """
+
     def _pick() -> str | None:
         try:
             import tkinter as tk
@@ -232,6 +246,15 @@ async def browse_folder(user_id: str = Depends(resolve_user_id)):
 @app.get("/tools")
 async def list_tools():
     return {"tools": [item.model_dump() for item in registry.discover()]}
+
+
+@app.post("/tools/{tool_name}/run")
+async def run_tool(tool_name: str, body: ToolExecutionRequest):
+    try:
+        result = await ExecutionKernel().execute(tool_name, **body.arguments)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"Unknown tool: {tool_name}") from exc
+    return result.model_dump()
 
 
 @app.get("/sandbox/status")
@@ -420,6 +443,15 @@ async def get_session(session_id: str, user_id: str = Depends(resolve_user_id)):
         raise HTTPException(status_code=404, detail="Session not found")
     meta = paths.read_json(paths.meta_path(user_id, session_id), session)
     meta["project_root"] = session.get("project_root") or meta.get("project_root")
+    meta["summary"] = meta.get("summary")
+    meta["messages"] = [
+        {
+            "role": message["role"],
+            "content": message["content"],
+            "timestamp": message["created_at"],
+        }
+        for message in storage.list_messages(session_id)
+    ]
     return meta
 
 
@@ -735,3 +767,117 @@ async def stats_me(user_id: str = Depends(resolve_user_id)):
 @app.get("/metrics")
 async def get_metrics():
     return metrics.snapshot()
+
+
+@app.post("/agent/runs")
+async def start_agent_run(
+    body: AgentRunRequest,
+    user_id: str = Depends(resolve_user_id),
+):
+    if not body.session_id:
+        raise HTTPException(status_code=400, detail="session_id is required")
+    session = storage.get_session(body.session_id)
+    if not session or session["user_id"] != user_id:
+        raise HTTPException(status_code=404, detail="Session not found")
+    run = await agent_runner.start(body.goal, session_id=body.session_id)
+    return agent_runner.serialize(run)
+
+
+def get_user_agent_run(run_id: str, user_id: str):
+    try:
+        run = agent_runner.get(run_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Run not found") from exc
+    session = storage.get_session(run.session_id) if run.session_id else None
+    if not session or session["user_id"] != user_id:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return run
+
+
+@app.get("/agent/runs/{run_id}")
+async def get_agent_run(
+    run_id: str,
+    user_id: str = Depends(resolve_user_id),
+):
+    run = get_user_agent_run(run_id, user_id)
+    return agent_runner.serialize(run)
+
+
+@app.post("/agent/runs/{run_id}/approve")
+async def approve_agent_run(
+    run_id: str,
+    user_id: str = Depends(resolve_user_id),
+):
+    get_user_agent_run(run_id, user_id)
+    await agent_runner.approve(run_id)
+    run = agent_runner.get(run_id)
+    return agent_runner.serialize(run)
+
+
+@app.get("/agent/runs/{run_id}/stream")
+async def stream_agent_run(
+    run_id: str,
+    user_id: str = Depends(resolve_user_id),
+):
+    run = get_user_agent_run(run_id, user_id)
+
+    queue = agent_runner.subscribe(run_id)
+
+    async def event_generator():
+        try:
+            yield f"data: {json.dumps({'type': 'snapshot', 'payload': agent_runner.serialize(run)})}\n\n"
+            if run.status in {"completed", "failed"}:
+                return
+            while True:
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=20.0)
+                except TimeoutError:
+                    yield f"data: {json.dumps({'type': 'heartbeat'})}\n\n"
+                    continue
+                yield f"data: {json.dumps(event, default=str)}\n\n"
+                if event.get("type") in {"RunCompleted", "RunFailed"}:
+                    break
+        finally:
+            agent_runner.unsubscribe(run_id, queue)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@app.get("/events")
+async def get_events():
+    return {
+        "events": [
+            {
+                "event_id": event.event_id,
+                "type": event.type,
+                "timestamp": event.timestamp,
+                "payload": event.payload,
+            }
+            for event in event_bus.history()
+        ]
+    }
+
+
+@app.get("/executions")
+async def get_executions():
+    return {
+        "executions": [
+            {
+                "record_id": record.record_id,
+                "tool": record.tool,
+                "success": record.success,
+                "duration": record.duration,
+                "error": record.error,
+                "created_at": record.created_at,
+            }
+            for record in execution_recorder.list()
+        ]
+    }

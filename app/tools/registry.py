@@ -1,5 +1,3 @@
-from typing import Dict, List
-
 from app.schemas.tool_manifest import ToolManifest
 from app.tools.base import BaseTool
 
@@ -16,7 +14,7 @@ class ToolRegistry:
     """
 
     def __init__(self):
-        self.tools: Dict[str, BaseTool] = {}
+        self.tools: dict[str, BaseTool] = {}
 
     def register(self, tool: BaseTool) -> None:
         """
@@ -33,17 +31,14 @@ class ToolRegistry:
 
         return self.tools[name]
 
-    def list_tools(self) -> List[str]:
+    def list_tools(self) -> list[str]:
         """
         Return a list of registered tool names.
         """
         return list(self.tools.keys())
 
-    def discover(self) -> List[ToolManifest]:
+    def discover(self) -> list[ToolManifest]:
         """
         Return the manifests of all registered tools.
         """
-        return [
-            tool.manifest
-            for tool in self.tools.values()
-        ]
+        return [tool.manifest for tool in self.tools.values()]

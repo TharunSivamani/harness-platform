@@ -60,6 +60,11 @@ export type Session = {
   created_at?: string;
 };
 
+export type SessionDetail = {
+  summary: string | null;
+  messages: Array<{ role: string; content: string; timestamp: string }>;
+};
+
 export type ProjectTreeEntry = {
   name: string;
   path: string;
@@ -87,6 +92,8 @@ export const api = {
     ),
   sessions: (userId?: string) =>
     request<{ sessions: Session[] }>("/sessions", undefined, userId),
+  getSession: (sessionId: string, userId?: string) =>
+    request<SessionDetail>(`/sessions/${encodeURIComponent(sessionId)}`, undefined, userId),
   createSession: (title = "New chat", userId?: string, projectRoot?: string) =>
     request<Session>(
       "/sessions",
@@ -256,7 +263,50 @@ export const api = {
     request<{ tools: Array<{ name: string; description: string; permissions?: string[] }> }>(
       "/tools",
     ),
+  runTool: (toolName: string, arguments_: Record<string, unknown>) =>
+    request<Record<string, unknown>>(
+      `/tools/${encodeURIComponent(toolName)}/run`,
+      {
+        method: "POST",
+        body: JSON.stringify({ arguments: arguments_ }),
+      },
+    ),
   metrics: () => request<Record<string, unknown>>("/metrics"),
+  events: () =>
+    request<{
+      events: Array<{
+        event_id: string;
+        type: string;
+        timestamp: string;
+        payload: Record<string, unknown>;
+      }>;
+    }>("/events"),
+  executions: () =>
+    request<{
+      executions: Array<{
+        record_id: string;
+        tool: string;
+        success: boolean;
+        duration: number;
+        error: string | null;
+        created_at: string;
+      }>;
+    }>("/executions"),
+  startAutonomous: (goal: string, sessionId: string) =>
+    request<{ run_id: string; status: string; [key: string]: unknown }>(
+      "/agent/runs",
+      {
+        method: "POST",
+        body: JSON.stringify({ goal, session_id: sessionId }),
+      },
+    ),
+  getRun: (runId: string) =>
+    request<Record<string, unknown>>(`/agent/runs/${encodeURIComponent(runId)}`),
+  approveRun: (runId: string) =>
+    request<Record<string, unknown>>(
+      `/agent/runs/${encodeURIComponent(runId)}/approve`,
+      { method: "POST" },
+    ),
   llmProviders: () =>
     request<{ providers: string[]; defaults: Record<string, string | null> }>("/llm/providers"),
   llmProfiles: () =>

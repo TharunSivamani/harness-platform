@@ -9,11 +9,11 @@ from __future__ import annotations
 
 import asyncio
 from collections import defaultdict, deque
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Awaitable, Callable
+from datetime import UTC, datetime
+from typing import Any
 from uuid import uuid4
-
 
 # Default maximum events to retain in history (prevents memory leak)
 DEFAULT_MAX_HISTORY_SIZE = 10_000
@@ -24,9 +24,7 @@ class Event:
     type: str
     payload: dict[str, Any] = field(default_factory=dict)
     event_id: str = field(default_factory=lambda: str(uuid4()))
-    timestamp: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
-    )
+    timestamp: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
 
 EventHandler = Callable[[Event], Awaitable[None] | None]
@@ -35,7 +33,7 @@ EventHandler = Callable[[Event], Awaitable[None] | None]
 class EventBus:
     """
     In-process async event bus (Redis/Kafka-ready interface).
-    
+
     Features:
     - Bounded history with automatic eviction (default 10,000 events)
     - Async-safe event publishing
@@ -45,14 +43,16 @@ class EventBus:
     def __init__(self, max_history_size: int = DEFAULT_MAX_HISTORY_SIZE):
         """
         Initialize the event bus.
-        
+
         Args:
             max_history_size: Maximum number of events to retain in history.
                              Set to 0 to disable history entirely.
         """
         self._handlers: dict[str, list[EventHandler]] = defaultdict(list)
         # Use deque with maxlen for automatic bounded history
-        self._history: deque[Event] = deque(maxlen=max_history_size if max_history_size > 0 else None)
+        self._history: deque[Event] = deque(
+            maxlen=max_history_size if max_history_size > 0 else None
+        )
         self._max_history_size = max_history_size
         self._total_published: int = 0  # Track total events ever published
 
@@ -75,12 +75,12 @@ class EventBus:
     async def publish(self, event_type: str, payload: dict[str, Any] | None = None) -> Event:
         """
         Publish an event to all subscribed handlers.
-        
+
         The event is added to history (subject to max_history_size cap)
         and then dispatched to all matching handlers.
         """
         event = Event(type=event_type, payload=payload or {})
-        
+
         # deque with maxlen automatically evicts oldest when full
         self._history.append(event)
         self._total_published += 1
@@ -95,11 +95,11 @@ class EventBus:
     def history(self, event_type: str | None = None, limit: int = 100) -> list[Event]:
         """
         Get recent events from history.
-        
+
         Args:
             event_type: Filter by event type (None for all types)
             limit: Maximum number of events to return
-            
+
         Returns:
             List of events, most recent last
         """
